@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "wallets": [
+    {
+      "private_key": "0xYOUR_PRIVATE_KEY",
+      "label": "burner1"
+    }
+  ]
+}

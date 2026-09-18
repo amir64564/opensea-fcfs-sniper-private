@@ -37,7 +37,7 @@ pub async fn sleep_until_fire(at_unix: i64, early_ms: i64) -> Result<()> {
     Ok(())
 }
 
-/// Rough RPC latency helper (ms).
+/// Rough RPC clock skew helper (ms). Positive => local ahead of block timestamp intuition.
 pub async fn rpc_latency_ms(rpc: &str) -> Result<f64> {
     let provider = ProviderBuilder::new().on_http(rpc.parse()?);
     let t0 = Instant::now();

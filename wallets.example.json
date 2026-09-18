@@ -2,8 +2,8 @@
   "version": 1,
   "wallets": [
     {
-      "private_key": "0xYOUR_PRIVATE_KEY",
-      "label": "burner1"
+      "private_key": "0xYOUR_PRIVATE_KEY_HEX",
+      "label": "main"
     }
   ]
 }

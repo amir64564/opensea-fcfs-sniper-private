@@ -1,10 +1,7 @@
-.env
-armed.json
-armed-api.json
 target/
-**/*.pem
-**/secrets*
-
+.env
 wallets.json
-
 wallet_names.json
+armed*.json
+*.log
+/tmp/

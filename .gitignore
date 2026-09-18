@@ -1,0 +1,6 @@
+.env
+armed.json
+armed-api.json
+target/
+**/*.pem
+**/secrets*

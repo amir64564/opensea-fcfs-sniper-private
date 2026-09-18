@@ -1,1 +1,1 @@
-file:///workspace/opensea-fcfs-sniper/src/session.rs
+PLACEHOLDER_LOAD_FROM_DISK

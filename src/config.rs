@@ -111,10 +111,36 @@ pub async fn doctor() -> Result<()> {
     Ok(())
 }
 
+/// Host-only label for an RPC URL (strip path/query/API keys).
+pub fn rpc_host_label(url: &str) -> String {
+    let url = url.trim();
+    if url.is_empty() {
+        return "[empty]".into();
+    }
+    let Some(scheme_end) = url.find("://") else {
+        let end = url.find(['/', '?', '#']).unwrap_or(url.len());
+        return url[..end].to_string();
+    };
+    let after = &url[scheme_end + 3..];
+    let host_end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    format!("{}{}", &url[..scheme_end + 3], &after[..host_end])
+}
+
 pub async fn rank_rpc() -> Result<()> {
+    let report = rank_rpc_report().await?;
+    for line in report.lines() {
+        crate::outln!("{line}");
+    }
+    Ok(())
+}
+
+/// Rank RPCs by eth_blockNumber p50; returns summary with hosts redacted (no full URLs).
+pub async fn rank_rpc_report() -> Result<String> {
     let cfg = AppConfig::from_env()?;
     let mut rows = Vec::new();
+    let mut lines = Vec::new();
     for (i, url) in cfg.rpc_urls.iter().enumerate() {
+        let host = rpc_host_label(url);
         let mut samples = Vec::new();
         for _ in 0..5 {
             let t0 = Instant::now();
@@ -122,23 +148,27 @@ pub async fn rank_rpc() -> Result<()> {
             match provider.get_block_number().await {
                 Ok(_) => samples.push(t0.elapsed().as_secs_f64() * 1000.0),
                 Err(e) => {
-                    crate::outln!("rpc[{i}] FAIL {e}");
+                    lines.push(format!("rpc[{i}] {host} FAIL {e}"));
                     samples.clear();
                     break;
                 }
             }
         }
-        if samples.is_empty() { continue; }
-        samples.sort_by(|a,b| a.partial_cmp(b).unwrap());
-        let p50 = samples[samples.len()/2];
-        rows.push((p50, i, url.clone()));
-        crate::outln!("rpc[{i}] p50_ms={p50:.2} samples={samples:?}");
+        if samples.is_empty() {
+            continue;
+        }
+        samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p50 = samples[samples.len() / 2];
+        rows.push((p50, i, host.clone()));
+        lines.push(format!("rpc[{i}] {host} p50_ms={p50:.2} n={}", samples.len()));
     }
-    rows.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
-    crate::outln!("fastest_first:");
-    for (p50, i, url) in rows {
-        let redacted = if url.len()>32 { format!("{}…", &url[..32]) } else { url };
-        crate::outln!("  {p50:.2}ms rpc[{i}] {redacted}");
+    rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    lines.push("fastest_first:".into());
+    for (p50, i, host) in &rows {
+        lines.push(format!("  {p50:.2}ms rpc[{i}] {host}"));
     }
-    Ok(())
+    if rows.is_empty() {
+        lines.push("(no successful RPC samples)".into());
+    }
+    Ok(lines.join("\n"))
 }

@@ -6,6 +6,7 @@ mod opensea;
 mod ops;
 mod panel;
 mod seadrop;
+mod session;
 mod telegram;
 mod timing;
 

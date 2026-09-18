@@ -1,31 +1,64 @@
 use crate::outln;
 use crate::arm;
-use crate::config;
+use crate::config::{self, AppConfig};
 use crate::fire;
 use crate::opensea;
 use crate::timing;
+use alloy::signers::local::PrivateKeySigner;
 use eyre::{Result, WrapErr};
 use std::time::Instant;
 
 pub async fn run_public_snipe(nft: &str, qty: u64, at: i64, early_ms: i64, dry_run: bool) -> Result<()> {
+    run_public_snipe_with(nft, qty, at, early_ms, dry_run, None).await
+}
+
+/// Public FCFS with optional wallet private-key override (session-selected wallet).
+pub async fn run_public_snipe_with(
+    nft: &str,
+    qty: u64,
+    at: i64,
+    early_ms: i64,
+    dry_run: bool,
+    wallet_key: Option<&str>,
+) -> Result<()> {
+    if let Some(wk) = wallet_key {
+        apply_wallet_override(wk)?;
+    }
     let out = "armed.json";
     outln!("public arm nft={nft} qty={qty}");
     arm::arm_public(nft, qty, out).await?;
     fire::fire_armed(out, dry_run, early_ms, Some(at)).await
 }
 
-/// WL FCFS hot path:
-/// 1. Shared OpenSea HTTP/2 client + RPC prewarm + nonce cache (before countdown)
-/// 2. At T-early: hammer POST /mint until first 200 with to/data/value
-/// 3. Parse once → sign EIP-1559 with cached nonce (no estimateGas) → multi-RPC broadcast
-/// No slow pretty-JSON dump on the critical path before broadcast.
 pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run: bool) -> Result<()> {
-    let cfg = config::AppConfig::from_env()?;
+    run_api_snipe_with(slug, qty, at, early_ms, dry_run, None, None).await
+}
+
+/// WL FCFS with optional wallet + OpenSea API key overrides (Telegram session map).
+pub async fn run_api_snipe_with(
+    slug: &str,
+    qty: u64,
+    at: i64,
+    early_ms: i64,
+    dry_run: bool,
+    wallet_key: Option<&str>,
+    opensea_api_key: Option<&str>,
+) -> Result<()> {
+    if let Some(wk) = wallet_key {
+        apply_wallet_override(wk)?;
+    }
+    let mut cfg = AppConfig::from_env()?;
+    if let Some(k) = opensea_api_key {
+        let k = k.trim();
+        if !k.is_empty() {
+            cfg.opensea_api_key = Some(k.to_string());
+        }
+    }
     let api_key = cfg
         .opensea_api_key
         .clone()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| eyre::eyre!("OPENSEA_API_KEY missing — required for WL / api-snipe"))?;
+        .ok_or_else(|| eyre::eyre!("OPENSEA_API_KEY missing — paste via Snipe Setup or set env"))?;
 
     let os = opensea::http_client()?;
     let rpc = fire::rpc_http_client(cfg.rpc_urls.len())?;
@@ -51,12 +84,12 @@ pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run
         }
     }
     outln!(
-        "prewarm ok nonce={nonce} rpcs={} — waiting until {at} (early_ms={early_ms})",
-        cfg.rpc_urls.len()
+        "prewarm ok nonce={nonce} rpcs={} wallet={} — waiting until {at} (early_ms={early_ms})",
+        cfg.rpc_urls.len(),
+        cfg.wallet.address()
     );
     timing::sleep_until_fire(at, early_ms).await?;
 
-    // Hammer only — use prewarmed nonce (no RPC on critical path).
     let t_os = Instant::now();
     let mint = opensea::hammer_until_ready_with(
         &os,
@@ -70,7 +103,6 @@ pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run
     let opensea_mint_ms = t_os.elapsed().as_secs_f64() * 1000.0;
     outln!("opensea_mint_ms={opensea_mint_ms:.4} (OpenSea hammer until first 200 calldata; separate from RPC fire)");
 
-    // Hot path: parse already done → sign immediately → fire. No pretty dump first.
     let t_sign = Instant::now();
     let payload = arm::sign_api_mint(&cfg, mint, slug, qty, nonce)?;
     let sign_us = t_sign.elapsed().as_secs_f64() * 1_000_000.0;
@@ -81,10 +113,8 @@ pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run
         payload.tx_hash
     );
 
-    // Fire first; persist armed packet after (or skip write latency on critical path).
     let fire_res = fire::fire_payload(&cfg, &payload, dry_run, Some(rpc), true).await;
 
-    // Compact write after broadcast attempt (non-critical).
     let out = "armed-api.json";
     if let Ok(bytes) = serde_json::to_vec(&payload) {
         let _ = std::fs::write(out, bytes);
@@ -92,4 +122,21 @@ pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run
     }
 
     fire_res
+}
+
+fn apply_wallet_override(wallet_key: &str) -> Result<()> {
+    let signer: PrivateKeySigner = wallet_key
+        .trim()
+        .parse()
+        .wrap_err("invalid session wallet key")?;
+    // Process-local only — never write WALLET_KEY to .env from session.
+    std::env::set_var("WALLET_KEY", wallet_key.trim());
+    outln!("session wallet override address={}", signer.address());
+    Ok(())
+}
+
+/// Rank / doctor helpers stay on config module unchanged.
+#[allow(dead_code)]
+pub async fn doctor() -> Result<()> {
+    config::doctor().await
 }

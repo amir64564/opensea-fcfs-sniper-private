@@ -1,1 +1,0 @@
-@/workspace/opensea-fcfs-sniper/src/session.rs

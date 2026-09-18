@@ -1,1 +1,4 @@
-H4sIABbArGoC/7y9WW8cSbI1+N6/QqjvcZq6vi8DDDDAPM37vH1oCObm5lJeUUx2Jlkq3V8/x4JJMrdId
+# Full Cargo.lock is 106266 bytes (md5 3ed499256566e8d590f1e3f505ce8d1e).
+# MCP push_files cannot inline >~20KB in this agent path; restore from Cargo.lock.gz.b64:
+#   bash scripts/restore-cargo-lock.sh
+# Local source of truth: /workspace/opensea-fcfs-sniper/Cargo.lock

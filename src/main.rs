@@ -6,6 +6,7 @@ mod opensea;
 mod ops;
 mod panel;
 mod seadrop;
+mod telegram;
 mod timing;
 
 use clap::{Parser, Subcommand};
@@ -97,6 +98,8 @@ enum Cmd {
         #[arg(long, default_value = "127.0.0.1:8787")]
         bind: String,
     },
+    /// Telegram long-poll control (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)
+    Telegram,
 }
 
 #[tokio::main]
@@ -196,6 +199,7 @@ async fn main() -> Result<()> {
             ops::run_api_snipe(&slug, qty, at, early_ms, dry_run).await?;
         }
         Cmd::Panel { bind } => panel::serve(&bind).await?,
+        Cmd::Telegram => telegram::run().await?,
     }
     Ok(())
 }

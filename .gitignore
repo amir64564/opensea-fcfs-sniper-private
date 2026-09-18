@@ -4,3 +4,7 @@ armed-api.json
 target/
 **/*.pem
 **/secrets*
+
+wallets.json
+
+wallet_names.json

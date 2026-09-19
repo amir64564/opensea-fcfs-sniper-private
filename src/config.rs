@@ -146,7 +146,7 @@ pub async fn rank_rpc_report() -> Result<String> {
             let t0 = Instant::now();
             let provider = ProviderBuilder::new().on_http(url.parse()?);
             match provider.get_block_number().await {
-                Ok(_) => samples.push(t0.elapsed().as_secs_f64() * 1000.0),
+                Ok(_) => samples.push(t0.elapsed().as_secs_f64() * 1000.0);
                 Err(e) => {
                     lines.push(format!("rpc[{i}] {host} FAIL {e}"));
                     samples.clear();

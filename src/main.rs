@@ -1,5 +1,6 @@
 mod arm;
 mod config;
+mod errclass;
 mod fire;
 mod logbuf;
 mod opensea;
@@ -7,6 +8,7 @@ mod ops;
 mod panel;
 mod seadrop;
 mod session;
+mod task;
 mod telegram;
 mod timing;
 
@@ -141,15 +143,31 @@ async fn main() -> Result<()> {
                     // warmup
                     for _ in 0..32 {
                         let _ = arm::sign_call(
-                            &cfg, to, data.clone(), value, value,
-                            "bench".into(), 1, 0, 0, 0,
+                            &cfg,
+                            to,
+                            data.clone(),
+                            value,
+                            value,
+                            "bench".into(),
+                            1,
+                            0,
+                            0,
+                            0,
                         )?;
                     }
                     for i in 0..iters {
                         let t = std::time::Instant::now();
                         let _ = arm::sign_call(
-                            &cfg, to, data.clone(), value, value,
-                            "bench".into(), 1, 0, 0, i as u64,
+                            &cfg,
+                            to,
+                            data.clone(),
+                            value,
+                            value,
+                            "bench".into(),
+                            1,
+                            0,
+                            0,
+                            i as u64,
                         )?;
                         times_us.push(t.elapsed().as_secs_f64() * 1_000_000.0);
                     }

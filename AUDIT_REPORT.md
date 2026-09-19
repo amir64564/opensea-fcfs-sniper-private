@@ -87,3 +87,34 @@ Private repo: `amir64564/opensea-fcfs-sniper-private` (branch `main`).
 - `src/telegram.rs` (~42KB consolidated; remote still 319-byte stub)
 
 **Do not push `.env` or secrets.** Local `cargo test` = 16/16; `cargo check` + `fmt` clean aside from unused-item warnings.
+
+## Hotpath harden pass (2026-09-19 IST)
+
+**Verify:** `cargo fmt --check` + `cargo check` + `cargo test` → **16/16 passed**
+
+### Problems found → fixes
+
+| # | Problem | Fix | File |
+|---|---------|-----|------|
+| 1 | WL hammer started only *after* countdown → calldata always late | Start hammer `OPENSEA_HAMMER_LEAD_MS` (default 3000) before fire; if ready early, sign then wait → broadcast | `ops.rs` |
+| 2 | `broadcast_all` used `join_all` — waited for slow RPCs before proceeding | `FuturesUnordered` + return on first success; leftover fan-out continues in background | `fire.rs` |
+| 3 | RPC rank = single sample | Multi-sample median (`RPC_RANK_SAMPLES`, default 3) + failure demotion; still only before hotpath | `fire.rs` |
+| 4 | Nonce used latest (can be stale vs mempool) | `get_transaction_count(...).pending()` during prep only | `arm.rs` |
+| 5 | Countdown used wall clock every tick | Wall sets target once; `Instant` deadline; coarse wall re-check; 1ms fine sleep (no spin) | `timing.rs` |
+| 6 | 429 backoff weak / flat | Adaptive exp backoff on 429/5xx; not-started stays base; never raise parallel | `opensea.rs` |
+| 7 | Public timed fire: prewarm/rank happened *after* wait | Arm + prewarm + rank before wait; fire with `already_prewarmed` | `ops.rs` + `fire.rs` `fire_armed_detailed` |
+| 8 | Hidden broadcast delay | Same as #2 | `fire.rs` |
+| 9 | `begin_waiting` check-then-set race | CAS on state atomic | `task.rs` |
+| 10–11 | Telegram / file I/O | Already off hotpath (notify after; armed dump post-fire) — no change | — |
+| 12–17 | Only real issues above | Left architecture intact | — |
+
+### Preserved
+
+HTTP/2, TCP_NODELAY, keepalive, RPC prewarm, concurrent multi-RPC broadcast, local signing, task guards, Telegram/control, password gate, auto-time, `--at`, panel, CLI.
+
+### Remaining risks
+
+1. Early OpenSea calldata could theoretically expire if stage signatures are short-lived (mitigated by lead window, not hours-early hammer).
+2. Background RPC fan-out after first_ok may still log late; does not block broadcast return.
+3. Pending nonce still fetched in prep — long waits with intervening txs need re-arm.
+4. Inclusion watch still optional; SUCCESS = broadcast accepted unless `INCLUSION_WATCH_MS` > 0.

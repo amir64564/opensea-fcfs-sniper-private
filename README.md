@@ -21,14 +21,19 @@ Wallet is eligible; you still race big bots for supply. OpenSea must mint-sign a
 
 `OPENSEA_API_KEY` is **required** for this path.
 
+**Mint-window auto-detect:** omit `--at`, pass `--at auto`, or `--auto-time` → WL uses OpenSea drop `active_stage`/`next_stage` `start_time`; Public uses on-chain `getPublicDrop.startTime`. Explicit `--at` always wins.
+
 ```bash
 cp .env.example .env
 # fill WALLET_KEY, RPC_URL, OPENSEA_API_KEY
 cargo build --release
 ./target/release/opensea-fcfs-sniper doctor
+# auto-time (GET drop → active/next stage startTime):
+./target/release/opensea-fcfs-sniper api-snipe --slug theroyalmechanica --qty 1 --auto-time --early-ms 50 --yes
+# or omit --at (same as auto):
+./target/release/opensea-fcfs-sniper api-snipe --slug theroyalmechanica --qty 1 --early-ms 50 --dry-run
+# custom time override (always wins):
 ./target/release/opensea-fcfs-sniper api-snipe --slug theroyalmechanica --qty 1 --at UNIX_SEC_OR_MS --early-ms 50 --yes
-# dry-run:
-./target/release/opensea-fcfs-sniper api-snipe --slug theroyalmechanica --qty 1 --at UNIX --early-ms 50 --dry-run
 # arm now (if stage already returns calldata), fire later:
 ./target/release/opensea-fcfs-sniper api-arm --slug theroyalmechanica --qty 1 --out armed-api.json
 ./target/release/opensea-fcfs-sniper fire --armed armed-api.json --dry-run
@@ -43,6 +48,8 @@ No OpenSea API on the hot path. Pre-sign `mintPublicDrop` **before** T0; at T-`e
 ```bash
 ./target/release/opensea-fcfs-sniper arm --nft 0xNFT --qty 1
 ./target/release/opensea-fcfs-sniper fire --armed armed.json --at UNIX --early-ms 50
+# auto-time = on-chain getPublicDrop startTime; --at overrides:
+./target/release/opensea-fcfs-sniper snipe --nft 0xNFT --qty 1 --auto-time --early-ms 50 --yes
 ./target/release/opensea-fcfs-sniper snipe --nft 0xNFT --qty 1 --at UNIX --early-ms 50 --yes
 ```
 
@@ -69,7 +76,7 @@ Toggle **WL / signed** (default) or **Public**. Fill slug *or* nft, qty, go-time
 
 ## Telegram control
 
-Remote control via long-poll bot (`telegram` subcommand). Only `TELEGRAM_CHAT_ID` may send commands. **Never logs private keys or full OpenSea API keys** (masked `first4…last4`).
+Remote control via long-poll bot (`telegram` subcommand). Requires `TELEGRAM_BOT_PASSWORD` unlock (`/password`); optional `TELEGRAM_CHAT_ID` allowlist (both if set). **Never logs private keys, full OpenSea API keys, or the password** (masked `first4…last4`).
 
 ### Setup (@BotFather)
 1. Open Telegram → talk to [@BotFather](https://t.me/BotFather)
@@ -79,7 +86,8 @@ Remote control via long-poll bot (`telegram` subcommand). Only `TELEGRAM_CHAT_ID
 5. Put into `.env`:
 ```bash
 TELEGRAM_BOT_TOKEN=<token from BotFather>
-TELEGRAM_CHAT_ID=123456789
+TELEGRAM_BOT_PASSWORD=<secret unlock code>
+TELEGRAM_CHAT_ID=123456789   # optional allowlist; if set, chat must match AND unlock
 ```
 6. Run:
 ```bash
@@ -91,8 +99,9 @@ TELEGRAM_CHAT_ID=123456789
 2. Bot shows the selected wallet and asks: *Send the OpenSea API key for this wallet.*
 3. Paste a **NEW** API key (session-only; not a permanent `API_1` vault). Optionally set an API display name (`/skip` to skip).
 4. Multi-wallet: repeats key (and optional name) for each selected wallet in order — strict wallet→key map for this session.
-5. Tap **Arm**, then send `wl <slug> <qty> <at> [early_ms] [dry]` or `public <nft> …` (or `/snipe_wl` / `/snipe_public`).
-6. On SUCCESS / FAILED / TIMEOUT / **Cancel Session**: temporary OpenSea API key material is wiped (memory + `/tmp` 0600 file). Wallet keys + wallet display names **persist**.
+5. `/start` → unlock with `/password <code>` (required). Optional `/lock` to re-lock this chat.
+6. Tap **Arm**, then send `wl <slug> <qty>` (auto-time) or `wl <slug> <qty> <at> [early_ms] [dry]` / `public <nft> …`.
+7. On SUCCESS / FAILED / TIMEOUT / **Cancel Session**: temporary OpenSea API key material is wiped (memory + `/tmp` 0600 file). Wallet keys + wallet display names **persist**.
 
 ### Wallet import & names
 - `/import_wallet <pk>` → then *Set your wallet name* (saved to `wallet_names.json` / `wallets.json` label)

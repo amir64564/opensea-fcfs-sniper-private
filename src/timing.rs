@@ -69,3 +69,25 @@ pub fn parse_go_time(s: &str) -> Result<i64> {
         .ok_or_else(|| eyre::eyre!("ambiguous IST datetime"))?;
     Ok(dt.timestamp())
 }
+
+
+/// Explicit `--at` wins. `None` / `"auto"` / `--auto-time` → auto-detect (`Ok(None)`).
+pub fn resolve_at_arg(at: Option<&str>, _auto_time: bool) -> Result<Option<i64>> {
+    // Explicit --at wins. Omit / "auto" / --auto-time → None (caller auto-detects).
+    if let Some(s) = at {
+        let t = s.trim();
+        if !t.is_empty() && !t.eq_ignore_ascii_case("auto") {
+            return Ok(Some(parse_go_time(t)?));
+        }
+    }
+    Ok(None)
+}
+
+/// Telegram / free-text: treat missing, empty, or `auto` as auto-detect.
+pub fn resolve_at_token(tok: Option<&str>) -> Result<Option<i64>> {
+    match tok.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(t) if t.eq_ignore_ascii_case("auto") => Ok(None),
+        Some(t) => Ok(Some(parse_go_time(t)?)),
+    }
+}

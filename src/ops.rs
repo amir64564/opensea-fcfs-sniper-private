@@ -51,7 +51,35 @@ pub async fn run_public_snipe_with(
     let out = "armed.json";
     outln!("public arm nft={nft} qty={qty}");
     arm::arm_public(nft, qty, out).await?;
-    fire::fire_armed(out, dry_run, early_ms, Some(at)).await
+    // Prep before fire window: load signed packet, prewarm + rank, THEN wait → broadcast.
+    let mut cfg = AppConfig::from_env()?;
+    let payload: arm::ArmedPayload =
+        serde_json::from_str(&std::fs::read_to_string(out).wrap_err("read armed")?)?;
+    let rpc = fire::rpc_http_client(cfg.rpc_urls.len())?;
+    fire::prewarm_rpcs(&rpc, &cfg.rpc_urls).await;
+    if std::env::var("RPC_AUTO_RANK")
+        .map(|v| {
+            !matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "no" | "off"
+            )
+        })
+        .unwrap_or(true)
+        && cfg.rpc_urls.len() > 1
+    {
+        cfg.rpc_urls = fire::rank_rpc_urls(&rpc, &cfg.rpc_urls).await;
+        outln!(
+            "rpc rank applied before public countdown ({} endpoints)",
+            cfg.rpc_urls.len()
+        );
+    }
+    outln!(
+        "public prep ready — waiting until {} (early_ms={early_ms})",
+        timing::format_go_time_zones(at)
+    );
+    timing::sleep_until_fire(at, early_ms).await?;
+    let _ = fire::fire_payload(&cfg, &payload, dry_run, Some(rpc), true).await?;
+    Ok(())
 }
 
 pub async fn run_api_snipe(
@@ -166,30 +194,80 @@ pub async fn run_api_snipe_with(
             cfg.rpc_urls.len()
         );
     }
-    timing::sleep_until_fire(at, early_ms).await?;
 
-    let t_os = Instant::now();
-    let mint = opensea::hammer_until_ready_with(
-        &os,
-        &api_key,
-        slug,
-        cfg.wallet.address(),
-        qty,
-        opensea::hammer_timeout(),
-    )
-    .await?;
-    let opensea_mint_ms = t_os.elapsed().as_secs_f64() * 1000.0;
-    outln!("opensea_mint_ms={opensea_mint_ms:.4} (OpenSea hammer until first 200 calldata; separate from RPC fire)");
-
-    let t_sign = Instant::now();
-    let payload = arm::sign_api_mint(&cfg, mint, slug, qty, nonce)?;
-    let sign_us = t_sign.elapsed().as_secs_f64() * 1_000_000.0;
+    // Start OpenSea hammer near T (lead window), not hours early — avoids 429 burn.
+    // When calldata lands before fire time, sign early; hotpath = wait → broadcast.
+    let hammer_lead_ms: i64 = std::env::var("OPENSEA_HAMMER_LEAD_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3_000);
+    // Sleep until (T - early_ms - lead), cancelable; then begin hammer.
+    let lead_early = early_ms.saturating_add(hammer_lead_ms);
     outln!(
-        "sign_eip1559_us={sign_us:.1} to={} value_wei={} hash={} nonce={nonce} (OpenSea calldata → instant sign, no estimateGas)",
-        payload.seadrop,
-        payload.value_wei,
-        payload.tx_hash
+        "opensea hammer lead_ms={hammer_lead_ms} (start before fire window; final hotpath = wait → single-fire → broadcast)"
     );
+    timing::sleep_until_fire(at, lead_early).await?;
+
+    let os_h = os.clone();
+    let api_key_h = api_key.clone();
+    let slug_h = slug.to_string();
+    let minter = cfg.wallet.address();
+    let qty_h = qty;
+    let hammer_timeout = opensea::hammer_timeout();
+    let mut hammer = tokio::spawn(async move {
+        opensea::hammer_until_ready_with(&os_h, &api_key_h, &slug_h, minter, qty_h, hammer_timeout)
+            .await
+    });
+
+    let early_mint = tokio::select! {
+        res = &mut hammer => {
+            Some(res.map_err(|e| eyre::eyre!("opensea hammer task join: {e}"))?)
+        }
+        wait_res = timing::sleep_until_fire(at, early_ms) => {
+            wait_res?;
+            None
+        }
+    };
+
+    let payload = match early_mint {
+        Some(mint_res) => {
+            let mint = mint_res?;
+            outln!(
+                "opensea calldata ready before fire — signing early; hotpath = wait → broadcast"
+            );
+            let t_sign = Instant::now();
+            let payload = arm::sign_api_mint(&cfg, mint, slug, qty, nonce)?;
+            let sign_us = t_sign.elapsed().as_secs_f64() * 1_000_000.0;
+            outln!(
+                "sign_eip1559_us={sign_us:.1} to={} value_wei={} hash={} nonce={nonce} (early arm)",
+                payload.seadrop,
+                payload.value_wei,
+                payload.tx_hash
+            );
+            // sleep_until_fire is idempotent if already past target
+            timing::sleep_until_fire(at, early_ms).await?;
+            payload
+        }
+        None => {
+            outln!("fire window open — finishing OpenSea hammer if still pending");
+            let t_os = Instant::now();
+            let mint = hammer
+                .await
+                .map_err(|e| eyre::eyre!("opensea hammer task join: {e}"))??;
+            let opensea_mint_ms = t_os.elapsed().as_secs_f64() * 1000.0;
+            outln!("opensea_mint_ms={opensea_mint_ms:.4} (OpenSea hammer until first 200 calldata; separate from RPC fire)");
+            let t_sign = Instant::now();
+            let payload = arm::sign_api_mint(&cfg, mint, slug, qty, nonce)?;
+            let sign_us = t_sign.elapsed().as_secs_f64() * 1_000_000.0;
+            outln!(
+                "sign_eip1559_us={sign_us:.1} to={} value_wei={} hash={} nonce={nonce} (OpenSea calldata → instant sign, no estimateGas)",
+                payload.seadrop,
+                payload.value_wei,
+                payload.tx_hash
+            );
+            payload
+        }
+    };
 
     let fire_out = fire::fire_payload(&cfg, &payload, dry_run, Some(rpc), true).await?;
 

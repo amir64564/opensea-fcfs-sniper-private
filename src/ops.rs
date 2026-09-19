@@ -1,22 +1,29 @@
-use crate::outln;
 use crate::arm;
 use crate::config::{self, AppConfig};
 use crate::fire;
 use crate::opensea;
+use crate::outln;
 use crate::timing;
 use alloy::signers::local::PrivateKeySigner;
 use eyre::{Result, WrapErr};
 use std::time::Instant;
 
-pub async fn run_public_snipe(nft: &str, qty: u64, at: i64, early_ms: i64, dry_run: bool) -> Result<()> {
+pub async fn run_public_snipe(
+    nft: &str,
+    qty: u64,
+    at: Option<i64>,
+    early_ms: i64,
+    dry_run: bool,
+) -> Result<()> {
     run_public_snipe_with(nft, qty, at, early_ms, dry_run, None).await
 }
 
 /// Public FCFS with optional wallet private-key override (session-selected wallet).
+/// `at = None` → auto-detect from on-chain `getPublicDrop.startTime`.
 pub async fn run_public_snipe_with(
     nft: &str,
     qty: u64,
-    at: i64,
+    at: Option<i64>,
     early_ms: i64,
     dry_run: bool,
     wallet_key: Option<&str>,
@@ -24,21 +31,39 @@ pub async fn run_public_snipe_with(
     if let Some(wk) = wallet_key {
         apply_wallet_override(wk)?;
     }
+    let at = match at {
+        Some(t) => {
+            outln!("go-time override at={t} (explicit)");
+            t
+        }
+        None => {
+            let t = arm::public_drop_start_unix(nft).await?;
+            outln!("auto-time public getPublicDrop startTime={t}");
+            t
+        }
+    };
     let out = "armed.json";
     outln!("public arm nft={nft} qty={qty}");
     arm::arm_public(nft, qty, out).await?;
     fire::fire_armed(out, dry_run, early_ms, Some(at)).await
 }
 
-pub async fn run_api_snipe(slug: &str, qty: u64, at: i64, early_ms: i64, dry_run: bool) -> Result<()> {
+pub async fn run_api_snipe(
+    slug: &str,
+    qty: u64,
+    at: Option<i64>,
+    early_ms: i64,
+    dry_run: bool,
+) -> Result<()> {
     run_api_snipe_with(slug, qty, at, early_ms, dry_run, None, None).await
 }
 
 /// WL FCFS with optional wallet + OpenSea API key overrides (Telegram session map).
+/// `at = None` → auto-detect from OpenSea drop details (active/next stage startTime).
 pub async fn run_api_snipe_with(
     slug: &str,
     qty: u64,
-    at: i64,
+    at: Option<i64>,
     early_ms: i64,
     dry_run: bool,
     wallet_key: Option<&str>,
@@ -70,19 +95,42 @@ pub async fn run_api_snipe_with(
         fire::prewarm_rpcs(&rpc, &cfg.rpc_urls),
     );
     let nonce = nonce_res.wrap_err("prefetch nonce")?;
-    match drop_res {
-        Ok(details) => {
+
+    let at = match at {
+        Some(t) => {
+            if let Ok(details) = &drop_res {
+                let name = details
+                    .get("name")
+                    .or_else(|| details.get("collection_name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                outln!("prewarm drop slug={slug} name={name}");
+            } else if let Err(e) = &drop_res {
+                outln!("WARN: prewarm GET /drops/{slug} failed ({e}) — connection may still be warm");
+            }
+            outln!("go-time override at={t} (explicit)");
+            t
+        }
+        None => {
+            let details = drop_res.wrap_err("GET drop required for auto-time")?;
             let name = details
                 .get("name")
                 .or_else(|| details.get("collection_name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             outln!("prewarm drop slug={slug} name={name}");
+            let stage = opensea::pick_relevant_stage_start(&details)?;
+            outln!(
+                "auto-time stage source={} type={} label={} startTime={}",
+                stage.source,
+                stage.stage_type,
+                stage.label,
+                stage.start_unix
+            );
+            stage.start_unix
         }
-        Err(e) => {
-            outln!("WARN: prewarm GET /drops/{slug} failed ({e}) — connection may still be warm")
-        }
-    }
+    };
+
     outln!(
         "prewarm ok nonce={nonce} rpcs={} wallet={} — waiting until {at} (early_ms={early_ms})",
         cfg.rpc_urls.len(),

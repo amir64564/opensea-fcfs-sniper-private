@@ -60,8 +60,11 @@ enum Cmd {
         nft: String,
         #[arg(long, default_value_t = 1)]
         qty: u64,
+        /// Unix / IST datetime, or `auto`. Omit + `--auto-time` = on-chain getPublicDrop startTime.
         #[arg(long)]
-        at: i64,
+        at: Option<String>,
+        #[arg(long, default_value_t = false)]
+        auto_time: bool,
         #[arg(long, default_value_t = 50)]
         early_ms: i64,
         #[arg(long, default_value_t = false)]
@@ -84,9 +87,11 @@ enum Cmd {
         slug: String,
         #[arg(long, default_value_t = 1)]
         qty: u64,
-        /// Unix timestamp in seconds or milliseconds
+        /// Unix / IST datetime, or `auto`. Omit / `--auto-time` = OpenSea drop stage startTime.
         #[arg(long)]
-        at: i64,
+        at: Option<String>,
+        #[arg(long, default_value_t = false)]
+        auto_time: bool,
         #[arg(long, default_value_t = 50)]
         early_ms: i64,
         #[arg(long, default_value_t = false)]
@@ -99,7 +104,7 @@ enum Cmd {
         #[arg(long, default_value = "127.0.0.1:8787")]
         bind: String,
     },
-    /// Telegram long-poll control (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)
+    /// Telegram long-poll control (TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_PASSWORD)
     Telegram,
 }
 
@@ -174,6 +179,7 @@ async fn main() -> Result<()> {
             nft,
             qty,
             at,
+            auto_time,
             early_ms,
             dry_run,
             yes,
@@ -181,15 +187,15 @@ async fn main() -> Result<()> {
             if !yes && !dry_run {
                 eyre::bail!("refusing live snipe without --yes (or pass --dry-run)");
             }
-            let out = "armed.json";
-            arm::arm_public(&nft, qty, out).await?;
-            fire::fire_armed(out, dry_run, early_ms, Some(at)).await?;
+            let at = timing::resolve_at_arg(at.as_deref(), auto_time)?;
+            ops::run_public_snipe(&nft, qty, at, early_ms, dry_run).await?;
         }
         Cmd::ApiArm { slug, qty, out } => arm::arm_api(&slug, qty, &out).await?,
         Cmd::ApiSnipe {
             slug,
             qty,
             at,
+            auto_time,
             early_ms,
             dry_run,
             yes,
@@ -197,6 +203,7 @@ async fn main() -> Result<()> {
             if !yes && !dry_run {
                 eyre::bail!("refusing live api-snipe without --yes (or pass --dry-run)");
             }
+            let at = timing::resolve_at_arg(at.as_deref(), auto_time)?;
             ops::run_api_snipe(&slug, qty, at, early_ms, dry_run).await?;
         }
         Cmd::Panel { bind } => panel::serve(&bind).await?,

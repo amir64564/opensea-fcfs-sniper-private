@@ -116,6 +116,8 @@ pub async fn hammer_until_ready_with(
 ) -> Result<MintTx> {
     let t0 = Instant::now();
     let mut wave: u32 = 0;
+    let mut consec_429: u32 = 0;
+    let mut consec_5xx: u32 = 0;
     let backoff_ms = hammer_backoff_ms();
     let parallel = hammer_parallel();
     // Log sparsely: first response, status changes, every LOG_EVERY waves, READY/fatal.
@@ -234,9 +236,22 @@ pub async fn hammer_until_ready_with(
         if !saw_retry {
             eyre::bail!("OpenSea mint hammer: empty wave with no retryable result");
         }
+        // Adaptive backoff: 429/5xx back off carefully; not-started stays snappy.
+        // Never raise parallel — that worsens 429s.
         let sleep_ms = if last_retry_status == 429 {
-            backoff_ms.max(50)
+            consec_429 = consec_429.saturating_add(1);
+            consec_5xx = 0;
+            let exp = 50u64.saturating_mul(1u64 << consec_429.min(4));
+            backoff_ms.max(exp).min(1_000)
+        } else if (500..600).contains(&last_retry_status) {
+            consec_5xx = consec_5xx.saturating_add(1);
+            consec_429 = 0;
+            let exp = backoff_ms.saturating_mul(1u64 << consec_5xx.min(3));
+            exp.min(500).max(backoff_ms)
         } else {
+            // not-started / 409 / 422 — keep base backoff, reset rate-limit streak
+            consec_429 = 0;
+            consec_5xx = 0;
             backoff_ms
         };
         sleep(Duration::from_millis(sleep_ms)).await;
@@ -270,3 +285,22 @@ pub async fn ping_api(api_key: &str) -> Result<()> {
     let client = http_client()?;
     ping_api_with(&client, api_key).await
 }
+
+pub async fn ping_api_with(client: &Client, api_key: &str) -> Result<()> {
+    let resp = client
+        .get(format!("{OPENSEA_API}/api/v2/drops?type=featured&limit=1"))
+        .header("X-API-KEY", api_key)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .wrap_err("GET featured drops")?;
+    let status = resp.status();
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        eyre::bail!("auth failed status={status}");
+    }
+    if !status.is_success() {
+        eyre::bail!("status={status}");
+    }
+    Ok(())
+}
+

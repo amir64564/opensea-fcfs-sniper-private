@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Restore Cargo.lock from Cargo.lock.gz.b64 (md5 3ed499256566e8d590f1e3f505ce8d1e)
+# Restore Cargo.lock from split Cargo.lock.gz.b64.part* files
 set -euo pipefail
-base64 -d < Cargo.lock.gz.b64 | gzip -d > Cargo.lock
-md5sum Cargo.lock
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cat "$ROOT"/Cargo.lock.gz.b64.part* | tr -d '\n' | base64 -d | gzip -d > "$ROOT/Cargo.lock"
+echo "Restored Cargo.lock ($(wc -c < "$ROOT/Cargo.lock") bytes)"

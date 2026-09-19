@@ -59,6 +59,21 @@ pub async fn arm_public(nft: &str, qty: u64, out: &str) -> Result<()> {
     Ok(())
 }
 
+
+/// On-chain SeaDrop public stage startTime (unix seconds).
+pub async fn public_drop_start_unix(nft: &str) -> Result<i64> {
+    let cfg = AppConfig::from_env()?;
+    let nft = Address::from_str(nft).wrap_err("nft address")?;
+    let provider = ProviderBuilder::new().on_http(cfg.rpc_urls[0].parse()?);
+    let seadrop = ISeaDrop::new(cfg.seadrop, provider);
+    let drop = seadrop.getPublicDrop(nft).call().await?._0;
+    let start = drop.startTime.to::<u64>() as i64;
+    if start == 0 {
+        eyre::bail!("getPublicDrop startTime is 0 — public drop not configured?");
+    }
+    Ok(start)
+}
+
 /// Hammer OpenSea Drops API for signed/WL mint calldata, then sign EIP-1559 locally (no estimateGas).
 pub async fn arm_api(slug: &str, qty: u64, out: &str) -> Result<()> {
     let cfg = AppConfig::from_env()?;

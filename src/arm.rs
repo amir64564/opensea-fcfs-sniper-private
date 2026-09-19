@@ -137,8 +137,13 @@ pub async fn arm_api(slug: &str, qty: u64, out: &str) -> Result<()> {
 }
 
 pub async fn fetch_nonce(cfg: &AppConfig) -> Result<u64> {
+    // Pending nonce: includes mempool txs so we do not reuse a stale "latest" nonce.
+    // Fetched during prep only — never on the final-ms hotpath.
     let provider = ProviderBuilder::new().on_http(cfg.rpc_urls[0].parse()?);
-    Ok(provider.get_transaction_count(cfg.wallet.address()).await?)
+    Ok(provider
+        .get_transaction_count(cfg.wallet.address())
+        .pending()
+        .await?)
 }
 
 /// Sign EIP-1559 with a known nonce. No RPC, no estimateGas — hot path after calldata lands.

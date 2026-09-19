@@ -95,20 +95,31 @@ impl TaskGate {
 
     /// Begin WAITING. Fails if another task is already active.
     pub fn begin_waiting(&self) -> eyre::Result<()> {
-        let cur = self.state();
-        if cur.is_active() {
-            eyre::bail!(
-                "duplicate execution blocked — task already {} (cancel first)",
-                cur.as_str()
-            );
+        // CAS so two concurrent begins cannot both pass the active check.
+        loop {
+            let cur_u8 = self.inner.state.load(Ordering::Acquire);
+            let cur = TaskState::from_u8(cur_u8);
+            if cur.is_active() {
+                eyre::bail!(
+                    "duplicate execution blocked — task already {} (cancel first)",
+                    cur.as_str()
+                );
+            }
+            self.inner.cancel.store(false, Ordering::Release);
+            self.inner.fired.store(false, Ordering::Release);
+            match self.inner.state.compare_exchange(
+                cur_u8,
+                TaskState::Waiting as u8,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    crate::outln!("task → WAITING");
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
         }
-        self.inner.cancel.store(false, Ordering::Release);
-        self.inner.fired.store(false, Ordering::Release);
-        self.inner
-            .state
-            .store(TaskState::Waiting as u8, Ordering::Release);
-        crate::outln!("task → WAITING");
-        Ok(())
     }
 
     pub fn set_armed(&self) {
@@ -166,7 +177,6 @@ impl TaskGate {
 
     pub fn reset_idle(&self) {
         self.inner.cancel.store(false, Ordering::Release);
-        self.inner.fired.store(false, Ordering::Release);
         self.inner
             .state
             .store(TaskState::Idle as u8, Ordering::Release);

@@ -65,20 +65,31 @@ pub async fn sleep_until_fire_cancelable(
             at_unix
         })
     );
+    // Wall clock sets absolute target; Instant drives the wait (no busy-spin).
+    // Coarse phase re-checks wall for NTP skew; fine phase is monotonic 1ms sleeps.
+    let now_wall = unix_now_ms();
+    let left0 = target_ms - now_wall;
+    if left0 <= 0 {
+        return Ok(true);
+    }
+    let deadline = Instant::now() + Duration::from_millis(left0 as u64);
     loop {
         if cancel.map(|c| c.load(Ordering::Acquire)).unwrap_or(false) {
             crate::outln!("countdown cancelled");
             return Ok(false);
         }
-        let now = unix_now_ms();
-        let left = target_ms - now;
-        if left <= 0 {
+        let mono_left = deadline.saturating_duration_since(Instant::now());
+        if mono_left.is_zero() {
             break;
         }
-        // coarse then fine sleep; check cancel ~every 200ms on long waits
-        if left > 50 {
-            let chunk = ((left as u64) - 20).min(200);
-            sleep(Duration::from_millis(chunk)).await;
+        let left_ms = mono_left.as_millis() as u64;
+        if left_ms > 50 {
+            let wall_left = target_ms - unix_now_ms();
+            if wall_left <= 0 {
+                break;
+            }
+            let chunk = ((wall_left as u64).saturating_sub(20)).min(200);
+            sleep(Duration::from_millis(chunk.max(1))).await;
         } else {
             sleep(Duration::from_millis(1)).await;
         }

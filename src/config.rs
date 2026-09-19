@@ -85,10 +85,16 @@ pub async fn doctor() -> Result<()> {
     for (i, url) in cfg.rpc_urls.iter().enumerate() {
         let t0 = Instant::now();
         let provider = ProviderBuilder::new().on_http(url.parse()?);
-        let id = provider.get_chain_id().await.wrap_err_with(|| format!("rpc {i}"))?;
+        let id = provider
+            .get_chain_id()
+            .await
+            .wrap_err_with(|| format!("rpc {i}"))?;
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         if id != cfg.chain_id {
-            return Err(eyre!("rpc {i} chain_id={id} != configured {}", cfg.chain_id));
+            return Err(eyre!(
+                "rpc {i} chain_id={id} != configured {}",
+                cfg.chain_id
+            ));
         }
         let bal = provider.get_balance(cfg.wallet.address()).await?;
         crate::outln!("rpc[{i}] ok latency_ms={ms:.2} balance_wei={bal}");
@@ -146,7 +152,7 @@ pub async fn rank_rpc_report() -> Result<String> {
             let t0 = Instant::now();
             let provider = ProviderBuilder::new().on_http(url.parse()?);
             match provider.get_block_number().await {
-                Ok(_) => samples.push(t0.elapsed().as_secs_f64() * 1000.0);
+                Ok(_) => samples.push(t0.elapsed().as_secs_f64() * 1000.0),
                 Err(e) => {
                     lines.push(format!("rpc[{i}] {host} FAIL {e}"));
                     samples.clear();
@@ -160,7 +166,10 @@ pub async fn rank_rpc_report() -> Result<String> {
         samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let p50 = samples[samples.len() / 2];
         rows.push((p50, i, host.clone()));
-        lines.push(format!("rpc[{i}] {host} p50_ms={p50:.2} n={}", samples.len()));
+        lines.push(format!(
+            "rpc[{i}] {host} p50_ms={p50:.2} n={}",
+            samples.len()
+        ));
     }
     rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     lines.push("fastest_first:".into());
@@ -171,4 +180,40 @@ pub async fn rank_rpc_report() -> Result<String> {
         lines.push("(no successful RPC samples)".into());
     }
     Ok(lines.join("\n"))
+}
+
+/// Lightweight startup validation (no network). Safe to call from telegram/panel.
+pub fn validate_startup() -> Result<()> {
+    let cfg = AppConfig::from_env()?;
+    if cfg.rpc_urls.is_empty() {
+        eyre::bail!("config: no RPC_URL configured");
+    }
+    for (i, u) in cfg.rpc_urls.iter().enumerate() {
+        if !(u.starts_with("http://") || u.starts_with("https://")) {
+            eyre::bail!(
+                "config: rpc[{i}] must be http(s) URL (host={})",
+                rpc_host_label(u)
+            );
+        }
+    }
+    if cfg.chain_id == 0 {
+        eyre::bail!("config: CHAIN_ID must be non-zero");
+    }
+    crate::outln!(
+        "config ok wallet={} chain_id={} rpcs={} opensea_key={}",
+        cfg.wallet.address(),
+        cfg.chain_id,
+        cfg.rpc_urls.len(),
+        if cfg
+            .opensea_api_key
+            .as_ref()
+            .map(|k| !k.is_empty())
+            .unwrap_or(false)
+        {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+    Ok(())
 }

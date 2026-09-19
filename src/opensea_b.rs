@@ -1,22 +1,3 @@
-
-pub async fn ping_api_with(client: &Client, api_key: &str) -> Result<()> {
-    let resp = client
-        .get(format!("{OPENSEA_API}/api/v2/drops?type=featured&limit=1"))
-        .header("X-API-KEY", api_key)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .wrap_err("GET featured drops")?;
-    let status = resp.status();
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        eyre::bail!("auth failed status={status}");
-    }
-    if !status.is_success() {
-        eyre::bail!("status={status}");
-    }
-    Ok(())
-}
-
 async fn post_mint(
     client: &Client,
     api_key: &str,

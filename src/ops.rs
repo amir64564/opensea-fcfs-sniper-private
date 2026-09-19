@@ -33,12 +33,18 @@ pub async fn run_public_snipe_with(
     }
     let at = match at {
         Some(t) => {
-            outln!("go-time override at={t} (explicit)");
+            outln!(
+                "go-time override at={t} ({}) (explicit)",
+                timing::format_go_time_zones(t)
+            );
             t
         }
         None => {
             let t = arm::public_drop_start_unix(nft).await?;
-            outln!("auto-time public getPublicDrop startTime={t}");
+            outln!(
+                "auto-time public getPublicDrop startTime={t} ({})",
+                timing::format_go_time_zones(t)
+            );
             t
         }
     };
@@ -106,9 +112,14 @@ pub async fn run_api_snipe_with(
                     .unwrap_or("");
                 outln!("prewarm drop slug={slug} name={name}");
             } else if let Err(e) = &drop_res {
-                outln!("WARN: prewarm GET /drops/{slug} failed ({e}) — connection may still be warm");
+                outln!(
+                    "WARN: prewarm GET /drops/{slug} failed ({e}) — connection may still be warm"
+                );
             }
-            outln!("go-time override at={t} (explicit)");
+            outln!(
+                "go-time override at={t} ({}) (explicit)",
+                timing::format_go_time_zones(t)
+            );
             t
         }
         None => {
@@ -132,10 +143,29 @@ pub async fn run_api_snipe_with(
     };
 
     outln!(
-        "prewarm ok nonce={nonce} rpcs={} wallet={} — waiting until {at} (early_ms={early_ms})",
+        "prewarm ok nonce={nonce} rpcs={} wallet={} — waiting until {} (early_ms={early_ms})",
         cfg.rpc_urls.len(),
-        cfg.wallet.address()
+        cfg.wallet.address(),
+        timing::format_go_time_zones(at)
     );
+    // Rank RPCs during wait window (not on fire hot path). Failures stay in fan-out.
+    if std::env::var("RPC_AUTO_RANK")
+        .map(|v| {
+            !matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "no" | "off"
+            )
+        })
+        .unwrap_or(true)
+        && cfg.rpc_urls.len() > 1
+    {
+        let ranked = fire::rank_rpc_urls(&rpc, &cfg.rpc_urls).await;
+        cfg.rpc_urls = ranked;
+        outln!(
+            "rpc rank applied before countdown ({} endpoints)",
+            cfg.rpc_urls.len()
+        );
+    }
     timing::sleep_until_fire(at, early_ms).await?;
 
     let t_os = Instant::now();
@@ -161,15 +191,26 @@ pub async fn run_api_snipe_with(
         payload.tx_hash
     );
 
-    let fire_res = fire::fire_payload(&cfg, &payload, dry_run, Some(rpc), true).await;
+    let fire_out = fire::fire_payload(&cfg, &payload, dry_run, Some(rpc), true).await?;
 
     let out = "armed-api.json";
     if let Ok(bytes) = serde_json::to_vec(&payload) {
         let _ = std::fs::write(out, bytes);
-        outln!("armed ok file={out} hash={} (post-fire dump)", payload.tx_hash);
+        outln!(
+            "armed ok file={out} hash={} (post-fire dump)",
+            payload.tx_hash
+        );
     }
 
-    fire_res
+    outln!(
+        "snipe_wl done tx={} rpc={} broadcast_ms={:?} inclusion_ms={:?} dry={}",
+        fire_out.tx_hash,
+        fire_out.first_ok_rpc.as_deref().unwrap_or("-"),
+        fire_out.first_ok_ms,
+        fire_out.inclusion_ms,
+        fire_out.dry_run
+    );
+    Ok(())
 }
 
 fn apply_wallet_override(wallet_key: &str) -> Result<()> {

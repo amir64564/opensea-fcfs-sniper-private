@@ -175,7 +175,7 @@ function paintStatus(s) {
     '  gas='+s.gas_limit+'  tip='+s.priority_fee_gwei+'gwei'+
     (s.busy?'  <span class="warn">BUSY</span>':'');
 }
-function esc(t){ return String(t).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+function esc(t){ return String(t).replace(/[&<>]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c])); }
 function lineClass(l){
   if (/ERROR|fatal|auth failed/i.test(l)) return 'err';
   if (/WARN|still pending/i.test(l)) return 'warn';

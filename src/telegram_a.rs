@@ -1,8 +1,8 @@
-//! Telegram long-poll control bot (reqwest).
-//! Never logs WALLET_KEY / private keys / full OpenSea API keys / bot password.
-//! Access: TELEGRAM_BOT_PASSWORD required; optional TELEGRAM_CHAT_ID allowlist.
-//! Snipe Setup: select wallet(s) → paste NEW API key per wallet → optional API name
-//! → Arm → Mint → auto-wipe session API key material.
+// Telegram long-poll control bot (reqwest).
+// Never logs WALLET_KEY / private keys / full OpenSea API keys / bot password.
+// Access: TELEGRAM_BOT_PASSWORD required; optional TELEGRAM_CHAT_ID allowlist.
+// Snipe Setup: select wallet(s) → paste NEW API key per wallet → optional API name
+// → Arm → Mint → auto-wipe session API key material.
 
 use crate::config;
 use crate::errclass;
@@ -18,7 +18,6 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -215,14 +214,7 @@ struct JobDone {
 }
 
 fn main_keyboard() -> Value {
-    json!({
-        "keyboard": [
-            [{"text": "Snipe Setup"}, {"text": "Arm"}, {"text": "Cancel Session"}],
-            [{"text": "/status"}, {"text": "/help"}, {"text": "/wallets"}]
-        ],
-        "resize_keyboard": true,
-        "is_persistent": true
-    })
+    telegram_tools::main_menu()
 }
 
 fn keyboard_for(_sess: &SnipeSession) -> Value {

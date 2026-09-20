@@ -183,7 +183,3 @@ pub async fn fire_armed_detailed(
 
     fire_payload(&cfg, &payload, dry_run, Some(client), already_prewarmed).await
 }
-
-/// Broadcast an already-signed packet. No estimateGas.
-/// If `already_prewarmed`, skip RPC keep-alive AND skip hot-path re-rank
-/// (rank during prewarm instead — bad RPC must not add latency at fire).

@@ -55,10 +55,9 @@ pub fn main_menu() -> Value {
         "keyboard": [
             [{"text":"🎨 Mint NFT"},{"text":"🎯 WL Mint Sniper"}],
             [{"text":"🚀 Public Mint Sniper"},{"text":"📦 Batch Mint"}],
-            [{"text":"📦 Batch Mint"},{"text":"🎯 Batch Snipe"}],
-            [{"text":"🔧 Manual Mint"},{"text":"🎛️ Exec"}],
-            [{"text":"🎯 My Snipes"},{"text":"📋 Failure Log"}],
-            [{"text":"❌ Cancel Session"}],
+            [{"text":"🎯 Batch Snipe"},{"text":"🔧 Manual Mint"}],
+            [{"text":"🎛️ Exec"},{"text":"🎯 My Snipes"}],
+            [{"text":"📋 Failure Log"},{"text":"❌ Cancel Session"}],
             [{"text":"🔐 Snipe Setup"},{"text":"⚡ Arm"}],
             [{"text":"📤 Send NFTs"},{"text":"📤 Batch Send"}],
             [{"text":"🔥 Burn NFTs"},{"text":"🏦 Consolidate"}],

@@ -172,7 +172,7 @@ pub async fn batch_mint(api_key: &str, wallet: &session::WalletEntry, items: &[(
 pub async fn batch_snipe(api_key: &str, wallet: &session::WalletEntry, items: &[(String, u64, Option<i64>)], early_ms: i64, dry: bool) -> Result<String> {
     let mut lines = Vec::new();
     for (slug, qty, at) in items {
-        match crate::ops::run_api_snipe_with(slug, *qty, *at, early_ms, dry, Some(wallet.private_key.clone()), Some(api_key.to_string())).await {
+        match crate::ops::run_api_snipe_with(slug, *qty, *at, early_ms, dry, Some(wallet.private_key.as_str()), Some(api_key)).await {
             Ok(()) => lines.push(format!("OK {slug} qty={qty} at={at:?}")),
             Err(e) => lines.push(format!("FAIL {slug}: {}", crate::errclass::sanitize(&format!("{e:#}")))),
         }

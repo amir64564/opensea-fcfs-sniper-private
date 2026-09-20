@@ -1057,7 +1057,7 @@ async fn feature_send_eth(parts: Vec<&str>, sess: &SnipeSession) -> Result<Strin
 }
 
 fn help_text() -> String {
-    r#"Commands (unlocked chat only — /password first):
+    let base = r#"Commands (unlocked chat only — /password first):
 /start /password <code> /lock|/logout
 Snipe Setup — select wallet(s) → paste NEW OpenSea API key → optional API name → Arm
 Arm — show mint params once session keys are attached
@@ -1072,11 +1072,10 @@ Cancel Session — abort WAITING/ARMED/FIRING + wipe temporary OpenSea API keys
 /snipe_wl <slug> <qty> [at|auto] [early_ms] [dry]
 (omit at or auto → mint-window auto-detect)
 
-
 Session API keys are wiped after SUCCESS / FAILED / TIMEOUT / CANCELLED.
 Wallet private keys + display names persist. No permanent API_1 vault.
-Private keys / full API keys / password are never logged or sent."#
-        .into()
+Private keys / full API keys / password are never logged or sent."#;
+    format!("{base}\n\n{}", telegram_tools::feature_help())
 }
 
 fn status_text(sess: &SnipeSession) -> String {

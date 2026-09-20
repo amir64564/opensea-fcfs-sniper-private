@@ -1,5 +1,5 @@
-
-    /// Rename API label for a session key (by wallet index 1-based among selected, or address).
+impl SnipeSession {
+/// Rename API label for a session key (by wallet index 1-based among selected, or address).
     pub fn rename_api(
         &mut self,
         available: &[WalletEntry],

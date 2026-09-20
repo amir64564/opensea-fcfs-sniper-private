@@ -1,5 +1,5 @@
 //! Temporary OpenSea API-key session for Telegram snipe setup.
-//!
+//
 //! Flow: Idle → PickWallets → AwaitApiKey → AwaitApiName (optional label) → ReadyToArm → Running → Cleanup
 //! Wallet private keys + display names PERSIST (wallets.json / wallet_names.json).
 //! OpenSea API key SECRET is session-only (memory + 0600 /tmp); wiped on end.

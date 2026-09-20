@@ -321,6 +321,31 @@ async fn handle_message(
 
 
     // Screenshot-inspired utility menu. Reply-keyboard buttons are normal text messages in Telegram.
+    if button == "🔐 snipe setup" {
+        return start_snipe_setup(sess);
+    }
+    if button == "⚡ arm" {
+        return handle_arm_button(sess);
+    }
+    if button == "❌ cancel session" {
+        crate::task::request_global_cancel();
+        gate.request_cancel();
+        if let Some(job) = live.take() {
+            job.handle.abort();
+        }
+        gate.reset_idle();
+        sess.cleanup("CANCELLED");
+        crate::task::clear_global_cancel();
+        return Ok("Session cancelled. Countdown/fire abort requested. Temporary OpenSea API keys wiped. Wallets untouched.".into());
+    }
+    if button == "👛 wallets" {
+        let wallets = session::load_available_wallets()?;
+        return Ok(session::format_wallet_list(&wallets));
+    }
+    if button == "🌐 rpc" {
+        return Ok(list_rpcs_text());
+    }
+
     if matches!(
         button.as_str(),
         "🎨 mint nft" | "🎯 snipe" | "📦 batch mint" | "🎯 batch snipe" |

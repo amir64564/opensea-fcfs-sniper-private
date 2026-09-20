@@ -57,7 +57,8 @@ pub fn main_menu() -> Value {
             [{"text":"🚀 Public Mint Sniper"},{"text":"📦 Batch Mint"}],
             [{"text":"📦 Batch Mint"},{"text":"🎯 Batch Snipe"}],
             [{"text":"🔧 Manual Mint"},{"text":"🎛️ Exec"}],
-            [{"text":"🎯 My Snipes"},{"text":"❌ Cancel Session"}],
+            [{"text":"🎯 My Snipes"},{"text":"📋 Failure Log"}],
+            [{"text":"❌ Cancel Session"}],
             [{"text":"🔐 Snipe Setup"},{"text":"⚡ Arm"}],
             [{"text":"📤 Send NFTs"},{"text":"📤 Batch Send"}],
             [{"text":"🔥 Burn NFTs"},{"text":"🏦 Consolidate"}],
@@ -103,6 +104,22 @@ pub fn feature_help() -> String {
   /send_eth <to> <amount_eth> CONFIRM
 
 Generic transaction buttons use CONFIRM so a typo cannot immediately send funds."#.into()
+}
+
+pub fn failure_log(limit: usize) -> String {
+    let limit = limit.clamp(1, 50);
+    let path = "snipe_failures.log";
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return "Failure Log\nNo recorded snipe failures yet.".into();
+    };
+    let mut lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        return "Failure Log\nNo recorded snipe failures yet.".into();
+    }
+    if lines.len() > limit {
+        lines = lines[lines.len() - limit..].to_vec();
+    }
+    format!("Failure Log (latest {})\n{}", lines.len(), lines.join("\n"))
 }
 
 pub fn my_snipes() -> String {

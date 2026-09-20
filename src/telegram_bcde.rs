@@ -1,6 +1,6 @@
 
 fn record_snipe_failure(mode: &str, target: &str, qty: u64, wallet: &str, err: &str) {
-    let safe = errclass::sanitize(err).replace(['\n', '\r', '\t'], " ");
+    let safe = errclass::sanitize(err).replace('\n', " ").replace('\r', " ").replace('\t', " ");
     let kind = errclass::classify(&safe).as_str();
     let line = format!(
         "{} | mode={} | target={} | qty={} | wallet={} | kind={} | error={}",
@@ -924,6 +924,7 @@ fn feature_button_text(button: &str) -> String {
         "🔧 manual mint" => "Manual Mint\nUse: /manual_mint <contract> <value_eth> <calldata_hex> CONFIRM".into(),
         "🎛️ exec" => "Exec\nUse: /exec <to> <value_eth> <calldata_hex> CONFIRM".into(),
         "🎯 my snipes" => telegram_tools::my_snipes(),
+        "📋 failure log" => telegram_tools::failure_log(20),
         "📤 send nfts" => "Send NFTs\nUse: /send_nft <erc721|erc1155> ...".into(),
         "📤 batch send" => "Batch Send\nUse: /batch_send <erc721|erc1155> ...".into(),
         "🔥 burn nfts" => "Burn NFTs\nUse: /burn <contract> <token_id> CONFIRM".into(),

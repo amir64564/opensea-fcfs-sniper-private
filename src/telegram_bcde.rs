@@ -1,4 +1,27 @@
 
+fn record_snipe_failure(mode: &str, target: &str, qty: u64, wallet: &str, err: &str) {
+    let safe = errclass::sanitize(err).replace(['\n', '\r', '\t'], " ");
+    let kind = errclass::classify(&safe).as_str();
+    let line = format!(
+        "{} | mode={} | target={} | qty={} | wallet={} | kind={} | error={}",
+        chrono::Utc::now().to_rfc3339(),
+        mode,
+        target,
+        qty,
+        wallet,
+        kind,
+        safe
+    );
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("snipe_failures.log")
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
 fn collect_rpc_urls_from_env() -> Vec<String> {
     let mut urls = Vec::new();
     if let Ok(primary) = env::var("RPC_URL") {
@@ -345,6 +368,9 @@ async fn handle_message(
     if button == "🌐 rpc" {
         return Ok(list_rpcs_text());
     }
+    if button == "📋 failure log" {
+        return Ok(telegram_tools::failure_log(20));
+    }
     if button == "🎯 wl mint sniper" {
         return Ok("WL Mint Sniper\n\nUse:\n/wl_mint_sniper <slug> <qty> [at|auto] [early_ms] [dry]\n\nUses the existing OpenSea/WL snipe hot path.".into());
     }
@@ -354,7 +380,7 @@ async fn handle_message(
 
     if matches!(
         button.as_str(),
-        "🎨 mint nft" | "🎯 wl mint sniper" | "🚀 public mint sniper" |
+        "🎨 mint nft" | "🎯 wl mint sniper" | "🚀 public mint sniper" | "📋 failure log" |
         "📦 batch mint" | "🎯 batch snipe" |
         "🔧 manual mint" | "🎛️ exec" | "🎯 my snipes" | "📤 send nfts" |
         "📤 batch send" | "🔥 burn nfts" | "🏦 consolidate" | "🔍 eligibility" |
@@ -489,6 +515,10 @@ async fn handle_message(
         "/manual_mint" => feature_manual_mint(parts, sess).await,
         "/exec" => feature_exec(parts, sess).await,
         "/my_snipes" => Ok(telegram_tools::my_snipes()),
+        "/failures" => {
+            let limit = parts.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(20);
+            Ok(telegram_tools::failure_log(limit))
+        },
         "/send_nft" => feature_send_nft(parts, sess).await,
         "/batch_send" => feature_batch_send(parts, sess).await,
         "/burn" => feature_burn(parts, sess).await,
@@ -651,6 +681,7 @@ async fn run_snipe_wl(
                             timed_out = kind == "timeout";
                         }
                         any_fail = true;
+                        record_snipe_failure("wl", &slug, qty, label, &es);
                         reports.push(format!("FAIL {label} [{kind}]: {es}"));
                     }
                 }
@@ -697,7 +728,9 @@ async fn run_snipe_wl(
                 }
                 Err(e) => {
                     gate_job.finish_failed();
-                    errclass::telegram_error(&e)
+                    let es = errclass::sanitize(&format!("{e:#}"));
+                    record_snipe_failure("wl", &slug, qty, "env-wallet", &es);
+                    format!("[{}] {}", errclass::classify(&es).as_str(), es)
                 }
             };
             let ok = message.contains("SUCCESS");
@@ -782,6 +815,7 @@ async fn run_snipe_public(
                         any_fail = true;
                         let es = errclass::sanitize(&format!("{e:#}"));
                         let kind = errclass::classify(&es).as_str();
+                        record_snipe_failure("public", &nft, qty, label, &es);
                         reports.push(format!("FAIL {label} [{kind}]: {es}"));
                     }
                 }
@@ -825,7 +859,9 @@ async fn run_snipe_public(
                 }
                 Err(e) => {
                     gate_job.finish_failed();
-                    errclass::telegram_error(&e)
+                    let es = errclass::sanitize(&format!("{e:#}"));
+                    record_snipe_failure("public", &nft, qty, "env-wallet", &es);
+                    format!("[{}] {}", errclass::classify(&es).as_str(), es)
                 }
             };
             let ok = message.contains("SUCCESS");

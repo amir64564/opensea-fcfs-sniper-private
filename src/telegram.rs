@@ -1,3 +1,6 @@
-mod telegram_tools;
+mod telegram_tools {
+    include!("telegram_tools.rs");
+}
+use std::str::FromStr;
 include!("telegram_a.rs");
 include!("telegram_bcde.rs");

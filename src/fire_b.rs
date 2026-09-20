@@ -162,23 +162,33 @@ struct BroadcastResult {
 }
 
 async fn broadcast_all(client: &Client, rpcs: &[String], raw: &str) -> BroadcastResult {
+    // Serialize the JSON-RPC envelope once, before creating the concurrent requests.
+    // This keeps the fire loop focused on connection checkout and network I/O.
+    let request_body = serde_json::to_vec(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_sendRawTransaction",
+        "params": [raw],
+    }))
+    .expect("JSON-RPC broadcast body is serializable");
+
     // Concurrent fan-out to all RPCs. Return as soon as first success is seen;
     // remaining RPCs continue in background (NOT sequential, NOT join_all wait).
     let mut futs = FuturesUnordered::new();
     for (i, url) in rpcs.iter().enumerate() {
         let client = client.clone();
         let url = url.clone();
-        let raw = raw.to_string();
+        let request_body = request_body.clone();
         futs.push(async move {
             let host = config::rpc_host_label(&url);
             let t_rpc = Instant::now();
-            let body = json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "eth_sendRawTransaction",
-                "params": [raw],
-            });
-            match client.post(&url).json(&body).send().await {
+            match client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .body(request_body)
+                .send()
+                .await
+            {
                 Ok(r) => {
                     let status = r.status();
                     let text = r.text().await.unwrap_or_default();

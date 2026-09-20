@@ -57,6 +57,7 @@ pub fn main_menu() -> Value {
             [{"text":"📦 Batch Mint"},{"text":"🎯 Batch Snipe"}],
             [{"text":"🔧 Manual Mint"},{"text":"🎛️ Exec"}],
             [{"text":"🎯 My Snipes"},{"text":"❌ Cancel Session"}],
+            [{"text":"🔐 Snipe Setup"},{"text":"⚡ Arm"}],
             [{"text":"📤 Send NFTs"},{"text":"📤 Batch Send"}],
             [{"text":"🔥 Burn NFTs"},{"text":"🏦 Consolidate"}],
             [{"text":"🔍 Eligibility"},{"text":"💸 Disperse ETH"}],

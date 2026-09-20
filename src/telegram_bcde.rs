@@ -320,6 +320,18 @@ async fn handle_message(
     }
 
 
+    // Screenshot-inspired utility menu. Reply-keyboard buttons are normal text messages in Telegram.
+    if matches!(
+        button.as_str(),
+        "🎨 mint nft" | "🎯 snipe" | "📦 batch mint" | "🎯 batch snipe" |
+        "🔧 manual mint" | "🎛️ exec" | "🎯 my snipes" | "📤 send nfts" |
+        "📤 batch send" | "🔥 burn nfts" | "🏦 consolidate" | "🔍 eligibility" |
+        "💸 disperse eth" | "💸 send eth" | "👛 wallets" | "🌐 rpc" |
+        "⚙️ settings"
+    ) {
+        return Ok(feature_button_text(&button));
+    }
+
     match cmd.as_str() {
         "/help" | "help" => Ok(help_text()),
         "/doctor" => {
@@ -439,6 +451,19 @@ async fn handle_message(
         "/session" => Ok(session_status(sess)),
         "/snipe_public" => run_snipe_public(parts, sess, chat_id, gate, job_tx, live).await,
         "/snipe_wl" => run_snipe_wl(parts, sess, chat_id, gate, job_tx, live).await,
+        "/mint" => feature_mint(parts, sess).await,
+        "/batch_mint" => feature_batch_mint(parts, sess).await,
+        "/batch_snipe" => feature_batch_snipe(parts, sess).await,
+        "/manual_mint" => feature_manual_mint(parts, sess).await,
+        "/exec" => feature_exec(parts, sess).await,
+        "/my_snipes" => Ok(telegram_tools::my_snipes()),
+        "/send_nft" => feature_send_nft(parts, sess).await,
+        "/batch_send" => feature_batch_send(parts, sess).await,
+        "/burn" => feature_burn(parts, sess).await,
+        "/consolidate" => feature_consolidate(parts, sess).await,
+        "/eligibility" => feature_eligibility(parts, sess).await,
+        "/disperse_eth" => feature_disperse_eth(parts, sess).await,
+        "/send_eth" => feature_send_eth(parts, sess).await,
         // Shorthand mint params when ReadyToArm: wl <slug> ... / public <nft> ...
         "wl" if sess.is_ready() || sess.is_running() => {
             let mut p = vec!["/snipe_wl"];
@@ -818,6 +843,192 @@ fn parse_snipe_tail(tail: &[&str]) -> Result<(Option<i64>, i64, bool)> {
     let early_ms: i64 = rest.first().and_then(|s| s.parse().ok()).unwrap_or(50);
     let dry = rest.get(1).map(|s| is_dry(s)).unwrap_or(false);
     Ok((at, early_ms, dry))
+}
+
+
+fn feature_button_text(button: &str) -> String {
+    match button {
+        "🎨 mint nft" => "Mint NFT\nUse: /mint <slug> <qty>".into(),
+        "🎯 snipe" => "Snipe\nUse: /snipe_wl <slug> <qty> [at|auto] [early_ms] [dry]".into(),
+        "📦 batch mint" => "Batch Mint\nUse: /batch_mint <slug:qty,slug:qty,...>".into(),
+        "🎯 batch snipe" => "Batch Snipe\nUse: /batch_snipe <slug:qty:at,slug:qty:at,...>".into(),
+        "🔧 manual mint" => "Manual Mint\nUse: /manual_mint <contract> <value_eth> <calldata_hex> CONFIRM".into(),
+        "🎛️ exec" => "Exec\nUse: /exec <to> <value_eth> <calldata_hex> CONFIRM".into(),
+        "🎯 my snipes" => telegram_tools::my_snipes(),
+        "📤 send nfts" => "Send NFTs\nUse: /send_nft <erc721|erc1155> ...".into(),
+        "📤 batch send" => "Batch Send\nUse: /batch_send <erc721|erc1155> ...".into(),
+        "🔥 burn nfts" => "Burn NFTs\nUse: /burn <contract> <token_id> CONFIRM".into(),
+        "🏦 consolidate" => "Consolidate\nUse: /consolidate <target> [wallets|all] CONFIRM".into(),
+        "🔍 eligibility" => "Eligibility\nUse: /eligibility <slug> [wallet_index]".into(),
+        "💸 disperse eth" => "Disperse ETH\nUse: /disperse_eth <amount_each_eth> <target1,target2,...> CONFIRM".into(),
+        "💸 send eth" => "Send ETH\nUse: /send_eth <to> <amount_eth> CONFIRM".into(),
+        "👛 wallets" => "/wallets".into(),
+        "🌐 rpc" => "/rpc".into(),
+        "⚙️ settings" => telegram_tools::feature_help(),
+        _ => telegram_tools::feature_help(),
+    }
+}
+
+fn active_wallet(sess: &SnipeSession) -> Result<session::WalletEntry> {
+    let wallets = session::load_available_wallets()?;
+    if let Some(&idx) = sess.selected.first() {
+        return wallets.get(idx).cloned().ok_or_else(|| eyre::eyre!("selected wallet missing"));
+    }
+    wallets.into_iter().next().ok_or_else(|| eyre::eyre!("no wallets configured"))
+}
+
+fn active_api_key(sess: &SnipeSession) -> Result<String> {
+    let wallets = session::load_available_wallets()?;
+    if let Some(&idx) = sess.selected.first() {
+        if let Some(w) = wallets.get(idx) {
+            if let Some(k) = sess.key_for(&w.address) {
+                return Ok(k.to_string());
+            }
+        }
+    }
+    env::var("OPENSEA_API_KEY").wrap_err("no OpenSea API key available; use Snipe Setup or set OPENSEA_API_KEY")
+}
+
+fn require_confirm(parts: &[&str]) -> Result<()> {
+    if parts.last().map(|s| *s == "CONFIRM").unwrap_or(false) {
+        Ok(())
+    } else {
+        eyre::bail!("add CONFIRM at the end of the command");
+    }
+}
+
+async fn feature_mint(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 3 { return Ok("usage: /mint <slug> <qty>".into()); }
+    let wallet = active_wallet(sess)?;
+    let key = active_api_key(sess)?;
+    telegram_tools::mint(&key, &wallet, parts[1], parts[2].parse().wrap_err("qty")?).await
+}
+
+async fn feature_batch_mint(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 2 { return Ok("usage: /batch_mint <slug:qty,slug:qty,...>".into()); }
+    let wallet = active_wallet(sess)?;
+    let key = active_api_key(sess)?;
+    let mut items = Vec::new();
+    for item in parts[1].split(',') {
+        let mut p = item.split(':');
+        let slug = p.next().unwrap_or("").trim();
+        let qty: u64 = p.next().ok_or_else(|| eyre::eyre!("missing qty in {item}"))?.parse().wrap_err("qty")?;
+        if slug.is_empty() { eyre::bail!("empty slug"); }
+        items.push((slug.to_string(), qty));
+    }
+    telegram_tools::batch_mint(&key, &wallet, &items).await
+}
+
+async fn feature_batch_snipe(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 2 { return Ok("usage: /batch_snipe <slug:qty:at,slug:qty:at,...>".into()); }
+    let wallet = active_wallet(sess)?;
+    let key = active_api_key(sess)?;
+    let mut items = Vec::new();
+    for item in parts[1].split(',') {
+        let mut p = item.split(':');
+        let slug = p.next().unwrap_or("").trim();
+        let qty: u64 = p.next().ok_or_else(|| eyre::eyre!("missing qty in {item}"))?.parse().wrap_err("qty")?;
+        let at_raw = p.next().unwrap_or("auto");
+        let at = if at_raw.eq_ignore_ascii_case("auto") { None } else { Some(crate::timing::parse_go_time(at_raw)?) };
+        if slug.is_empty() { eyre::bail!("empty slug"); }
+        items.push((slug.to_string(), qty, at));
+    }
+    telegram_tools::batch_snipe(&key, &wallet, &items, 50, false).await
+}
+
+async fn feature_manual_mint(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 5 { return Ok("usage: /manual_mint <contract> <value_eth> <calldata_hex> CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let wallet = active_wallet(sess)?;
+    telegram_tools::manual_mint(&wallet, parts[1], parts[2], parts[3]).await
+}
+
+async fn feature_exec(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 5 { return Ok("usage: /exec <to> <value_eth> <calldata_hex> CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let wallet = active_wallet(sess)?;
+    telegram_tools::exec(&wallet, parts[1], parts[2], parts[3]).await
+}
+
+async fn feature_send_nft(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 5 { return Ok("usage: /send_nft <erc721|erc1155> <contract> <to> <token_id> [amount] [safe]".into()); }
+    let wallet = active_wallet(sess)?;
+    match parts[1].to_ascii_lowercase().as_str() {
+        "erc721" | "721" => telegram_tools::send_nft_erc721(&wallet, parts[2], parts[3], parts[4].parse().wrap_err("token_id")?, parts.get(5).map(|s| s.eq_ignore_ascii_case("safe")).unwrap_or(false)).await,
+        "erc1155" | "1155" => {
+            if parts.len() < 6 { return Ok("usage: /send_nft erc1155 <contract> <to> <token_id> <amount>".into()); }
+            telegram_tools::send_nft_erc1155(&wallet, parts[2], parts[3], parts[4].parse().wrap_err("token_id")?, parts[5].parse().wrap_err("amount")?).await
+        }
+        _ => Ok("type must be erc721 or erc1155".into()),
+    }
+}
+
+async fn feature_batch_send(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 4 { return Ok("usage: /batch_send erc721 <to> <contract:token,contract:token,...>".into()); }
+    let wallet = active_wallet(sess)?;
+    let typ = parts[1].to_ascii_lowercase();
+    let to = parts[2];
+    let mut lines = Vec::new();
+    for item in parts[3].split(',') {
+        let p: Vec<&str> = item.split(':').collect();
+        if typ == "erc721" || typ == "721" {
+            if p.len() != 2 { return Ok("ERC721 batch item format: contract:token_id".into()); }
+            lines.push(telegram_tools::send_nft_erc721(&wallet, p[0], to, p[1].parse().wrap_err("token_id")?, false).await?);
+        } else {
+            if p.len() != 3 { return Ok("ERC1155 batch item format: contract:token_id:amount".into()); }
+            lines.push(telegram_tools::send_nft_erc1155(&wallet, p[0], to, p[1].parse().wrap_err("token_id")?, p[2].parse().wrap_err("amount")?).await?);
+        }
+    }
+    Ok(lines.join("\n"))
+}
+
+async fn feature_burn(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 4 { return Ok("usage: /burn <contract> <token_id> CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let wallet = active_wallet(sess)?;
+    telegram_tools::burn_erc721(&wallet, parts[1], parts[2].parse().wrap_err("token_id")?).await
+}
+
+async fn feature_consolidate(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 3 { return Ok("usage: /consolidate <target> [wallets|all] CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let target = alloy::primitives::Address::from_str(parts[1]).wrap_err("target")?;
+    let wallets = session::load_available_wallets()?;
+    let selected = if parts[2].eq_ignore_ascii_case("all") {
+        wallets
+    } else {
+        let idxs = session::parse_wallet_selection(parts[2], wallets.len())?;
+        idxs.into_iter().filter_map(|i| wallets.get(i - 1).cloned()).collect()
+    };
+    telegram_tools::consolidate(&selected, target).await
+}
+
+async fn feature_eligibility(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 2 { return Ok("usage: /eligibility <slug> [wallet_index]".into()); }
+    let wallets = session::load_available_wallets()?;
+    let wallet = if let Some(raw) = parts.get(2) {
+        let i: usize = raw.parse().wrap_err("wallet index")?;
+        wallets.get(i.saturating_sub(1)).cloned().ok_or_else(|| eyre::eyre!("wallet index out of range"))?
+    } else {
+        active_wallet(sess)?
+    };
+    let key = active_api_key(sess)?;
+    telegram_tools::eligibility(&key, &wallet, parts[1], 1).await
+}
+
+async fn feature_disperse_eth(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 4 { return Ok("usage: /disperse_eth <amount_each_eth> <target1,target2,...> CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let wallet = active_wallet(sess)?;
+    let targets = parts[2].split(',').map(alloy::primitives::Address::from_str).collect::<std::result::Result<Vec<_>,_>>().wrap_err("target address")?;
+    telegram_tools::disperse_eth(&wallet, parts[1], &targets).await
+}
+
+async fn feature_send_eth(parts: Vec<&str>, sess: &SnipeSession) -> Result<String> {
+    if parts.len() < 4 { return Ok("usage: /send_eth <to> <amount_eth> CONFIRM".into()); }
+    require_confirm(&parts)?;
+    let wallet = active_wallet(sess)?;
+    telegram_tools::send_eth(&wallet, parts[1], parts[2]).await
 }
 
 fn help_text() -> String {

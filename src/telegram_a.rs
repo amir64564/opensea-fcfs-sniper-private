@@ -9,6 +9,7 @@ use crate::errclass;
 use crate::ops;
 use crate::session::{self, Phase, SnipeSession};
 use crate::task::TaskGate;
+use crate::telegram_tools;
 use eyre::{Result, WrapErr};
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -214,14 +215,7 @@ struct JobDone {
 }
 
 fn main_keyboard() -> Value {
-    json!({
-        "keyboard": [
-            [{"text": "Snipe Setup"}, {"text": "Arm"}, {"text": "Cancel Session"}],
-            [{"text": "/status"}, {"text": "/help"}, {"text": "/wallets"}]
-        ],
-        "resize_keyboard": true,
-        "is_persistent": true
-    })
+    telegram_tools::main_menu()
 }
 
 fn keyboard_for(_sess: &SnipeSession) -> Value {

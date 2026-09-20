@@ -53,7 +53,8 @@ pub fn parse_eth(s: &str) -> Result<U256> {
 pub fn main_menu() -> Value {
     serde_json::json!({
         "keyboard": [
-            [{"text":"🎨 Mint NFT"},{"text":"🎯 Snipe"}],
+            [{"text":"🎨 Mint NFT"},{"text":"🎯 WL Mint Sniper"}],
+            [{"text":"🚀 Public Mint Sniper"},{"text":"📦 Batch Mint"}],
             [{"text":"📦 Batch Mint"},{"text":"🎯 Batch Snipe"}],
             [{"text":"🔧 Manual Mint"},{"text":"🎛️ Exec"}],
             [{"text":"🎯 My Snipes"},{"text":"❌ Cancel Session"}],
@@ -74,8 +75,10 @@ pub fn feature_help() -> String {
     r#"Feature commands:
 🎨 Mint NFT
   /mint <slug> <qty>
-🎯 Snipe
+🎯 WL Mint Sniper
   /snipe_wl <slug> <qty> [at|auto] [early_ms] [dry]
+🚀 Public Mint Sniper
+  /snipe_public <nft> <qty> [at|auto] [early_ms] [dry]
 📦 Batch Mint
   /batch_mint <slug:qty,slug:qty,...>
 🎯 Batch Snipe

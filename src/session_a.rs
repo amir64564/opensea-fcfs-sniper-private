@@ -263,3 +263,5 @@ impl SnipeSession {
         }
         Ok(msg)
     }
+
+}

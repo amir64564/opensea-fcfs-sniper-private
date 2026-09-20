@@ -1,3 +1,6 @@
+/// Broadcast an already-signed packet. No estimateGas.
+/// If `already_prewarmed`, skip RPC keep-alive AND skip hot-path re-rank.
+/// Ranking is done during prewarm so a bad RPC must not add latency at fire.
 pub async fn fire_payload(
     cfg: &AppConfig,
     payload: &ArmedPayload,

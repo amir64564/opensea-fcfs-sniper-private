@@ -345,10 +345,17 @@ async fn handle_message(
     if button == "🌐 rpc" {
         return Ok(list_rpcs_text());
     }
+    if button == "🎯 wl mint sniper" {
+        return Ok("WL Mint Sniper\n\nUse:\n/wl_mint_sniper <slug> <qty> [at|auto] [early_ms] [dry]\n\nUses the existing OpenSea/WL snipe hot path.".into());
+    }
+    if button == "🚀 public mint sniper" {
+        return Ok("Public Mint Sniper\n\nUse:\n/public_mint_sniper <nft> <qty> [at|auto] [early_ms] [dry]\n\nUses the existing public SeaDrop hot path.".into());
+    }
 
     if matches!(
         button.as_str(),
-        "🎨 mint nft" | "🎯 snipe" | "📦 batch mint" | "🎯 batch snipe" |
+        "🎨 mint nft" | "🎯 wl mint sniper" | "🚀 public mint sniper" |
+        "📦 batch mint" | "🎯 batch snipe" |
         "🔧 manual mint" | "🎛️ exec" | "🎯 my snipes" | "📤 send nfts" |
         "📤 batch send" | "🔥 burn nfts" | "🏦 consolidate" | "🔍 eligibility" |
         "💸 disperse eth" | "💸 send eth" | "👛 wallets" | "🌐 rpc" |
@@ -474,8 +481,8 @@ async fn handle_message(
             Ok("nothing to skip".into())
         }
         "/session" => Ok(session_status(sess)),
-        "/snipe_public" => run_snipe_public(parts, sess, chat_id, gate, job_tx, live).await,
-        "/snipe_wl" => run_snipe_wl(parts, sess, chat_id, gate, job_tx, live).await,
+        "/snipe_public" | "/public_mint_sniper" => run_snipe_public(parts, sess, chat_id, gate, job_tx, live).await,
+        "/snipe_wl" | "/wl_mint_sniper" => run_snipe_wl(parts, sess, chat_id, gate, job_tx, live).await,
         "/mint" => feature_mint(parts, sess).await,
         "/batch_mint" => feature_batch_mint(parts, sess).await,
         "/batch_snipe" => feature_batch_snipe(parts, sess).await,
@@ -874,7 +881,8 @@ fn parse_snipe_tail(tail: &[&str]) -> Result<(Option<i64>, i64, bool)> {
 fn feature_button_text(button: &str) -> String {
     match button {
         "🎨 mint nft" => "Mint NFT\nUse: /mint <slug> <qty>".into(),
-        "🎯 snipe" => "Snipe\nUse: /snipe_wl <slug> <qty> [at|auto] [early_ms] [dry]".into(),
+        "🎯 wl mint sniper" => "WL Mint Sniper\nUse: /wl_mint_sniper <slug> <qty> [at|auto] [early_ms] [dry]".into(),
+        "🚀 public mint sniper" => "Public Mint Sniper\nUse: /public_mint_sniper <nft> <qty> [at|auto] [early_ms] [dry]".into(),
         "📦 batch mint" => "Batch Mint\nUse: /batch_mint <slug:qty,slug:qty,...>".into(),
         "🎯 batch snipe" => "Batch Snipe\nUse: /batch_snipe <slug:qty:at,slug:qty:at,...>".into(),
         "🔧 manual mint" => "Manual Mint\nUse: /manual_mint <contract> <value_eth> <calldata_hex> CONFIRM".into(),

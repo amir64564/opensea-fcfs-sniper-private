@@ -90,8 +90,22 @@ pub async fn sleep_until_fire_cancelable(
             }
             let chunk = ((wall_left as u64).saturating_sub(20)).min(200);
             sleep(Duration::from_millis(chunk.max(1))).await;
-        } else {
+        } else if left_ms > 2 {
+            // Keep the existing low-CPU timer wait until the final couple of ms.
+            // This avoids burning a core for the whole countdown while reducing
+            // scheduler/timer jitter immediately before the broadcast hot path.
             sleep(Duration::from_millis(1)).await;
+        } else {
+            // Tokio's 1ms timer can overshoot by a few milliseconds under load.
+            // A very short monotonic spin closes that final scheduling gap.
+            while Instant::now() < deadline {
+                if cancel.map(|c| c.load(Ordering::Acquire)).unwrap_or(false) {
+                    crate::outln!("countdown cancelled");
+                    return Ok(false);
+                }
+                std::hint::spin_loop();
+            }
+            break;
         }
     }
     Ok(true)

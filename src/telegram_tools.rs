@@ -202,7 +202,7 @@ pub async fn send_nft_erc721(wallet: &session::WalletEntry, contract: &str, to: 
     let contract = parse_addr(contract)?;
     let to = parse_addr(to)?;
     let data = if safe {
-        ITelegramNFTTools::safeTransferFromCall {
+        ITelegramNFTTools::safeTransferFrom_0Call {
             from: wallet.address,
             to,
             tokenId: U256::from(token_id),

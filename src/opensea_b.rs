@@ -137,6 +137,22 @@ pub struct StageStart {
 
 /// Pick relevant upcoming/active stage start from GET /drops/{slug} JSON.
 /// Prefers `active_stage`, then `next_stage`, then `stages[]` (active window, else soonest future).
+/// Read the OpenSea drop's chain identifier when the response provides one.
+pub fn drop_chain(details: &Value) -> Option<String> {
+    let keys = ["chain", "chain_name", "chainIdentifier", "chain_id"];
+    for key in keys {
+        if let Some(v) = details.get(key) {
+            if let Some(s) = v.as_str().filter(|s| !s.trim().is_empty()) {
+                return Some(s.trim().to_string());
+            }
+            if let Some(n) = v.as_u64() {
+                return Some(n.to_string());
+            }
+        }
+    }
+    None
+}
+
 pub fn pick_relevant_stage_start(details: &Value) -> Result<StageStart> {
     if let Some(st) = details.get("active_stage").filter(|v| v.is_object()) {
         if let Some(s) = stage_from_value(st, "active_stage") {

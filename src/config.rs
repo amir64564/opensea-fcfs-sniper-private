@@ -74,6 +74,90 @@ impl AppConfig {
     pub fn gwei_to_wei(gwei: u128) -> U256 {
         U256::from(gwei) * U256::from(1_000_000_000u64)
     }
+
+    /// Select a chain-specific RPC profile when configured.
+    ///
+    /// Example: BASE uses RPC_URL_BASE + BROADCAST_RPCS_BASE. If a chain profile
+    /// is absent, the existing RPC_URL/BROADCAST_RPCS setup remains unchanged.
+    pub async fn for_chain(&self, chain: &str) -> Result<Self> {
+        let key = chain_env_key(chain);
+        let rpc_key = format!("RPC_URL_{key}");
+        let extra_key = format!("BROADCAST_RPCS_{key}");
+        let chain_id_key = format!("CHAIN_ID_{key}");
+
+        let Some(primary) = env::var(&rpc_key).ok().filter(|v| !v.trim().is_empty()) else {
+            if chain_matches_id(chain, self.chain_id) {
+                return Ok(self.clone());
+            }
+            eyre::bail!(
+                "OpenSea detected chain={chain}, but {rpc_key} is not configured. Add {rpc_key} and optional {extra_key} to .env"
+            );
+        };
+
+        let mut rpc_urls = vec![primary.trim().to_string()];
+        if let Ok(extra) = env::var(&extra_key) {
+            for part in extra.split(',') {
+                let u = part.trim();
+                if !u.is_empty() && !rpc_urls.iter().any(|x| x == u) {
+                    rpc_urls.push(u.to_string());
+                }
+            }
+        }
+
+        // Ask the selected RPC for the real chain id instead of trusting a hard-coded map.
+        let provider = ProviderBuilder::new().on_http(rpc_urls[0].parse()?);
+        let detected_id = provider
+            .get_chain_id()
+            .await
+            .wrap_err_with(|| format!("detect chain id for OpenSea chain={chain}"))?;
+
+        if let Ok(expected) = env::var(&chain_id_key) {
+            let expected: u64 = expected.parse().wrap_err_with(|| format!("invalid {chain_id_key}"))?;
+            if expected != detected_id {
+                eyre::bail!(
+                    "{rpc_key} returned chain_id={detected_id}, but {chain_id_key}={expected}"
+                );
+            }
+        }
+
+        let mut out = self.clone();
+        out.rpc_urls = rpc_urls;
+        out.chain_id = detected_id;
+        crate::outln!(
+            "multichain profile selected chain={chain} chain_id={} rpcs={}",
+            out.chain_id,
+            out.rpc_urls.len()
+        );
+        Ok(out)
+    }
+}
+
+fn chain_env_key(chain: &str) -> String {
+    chain
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn chain_matches_id(chain: &str, chain_id: u64) -> bool {
+    match chain.trim().to_ascii_lowercase().as_str() {
+        "ethereum" | "mainnet" => chain_id == 1,
+        "base" => chain_id == 8453,
+        "arbitrum" | "arbitrum_one" => chain_id == 42161,
+        "optimism" => chain_id == 10,
+        "polygon" => chain_id == 137,
+        "zora" => chain_id == 7777777,
+        "blast" => chain_id == 81457,
+        "robinhood" | "robinhood_chain" => chain_id == 4663,
+        _ => false,
+    }
 }
 
 pub async fn doctor() -> Result<()> {

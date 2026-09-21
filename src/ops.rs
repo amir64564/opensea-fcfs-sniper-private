@@ -120,12 +120,24 @@ pub async fn run_api_snipe_with(
         .ok_or_else(|| eyre::eyre!("OPENSEA_API_KEY missing — paste via Snipe Setup or set env"))?;
 
     let os = opensea::http_client()?;
-    let rpc = fire::rpc_http_client(cfg.rpc_urls.len())?;
 
-    outln!("prewarm OpenSea HTTP/2 + TLS GET drop + RPCs + nonce (before countdown)");
-    let (nonce_res, drop_res, _) = tokio::join!(
+    outln!("prewarm OpenSea HTTP/2 + TLS GET drop (before countdown)");
+    // Drop metadata is fetched first so the transaction is signed/broadcast on the
+    // actual OpenSea chain instead of the single default CHAIN_ID profile.
+    let drop_res = opensea::fetch_drop_with(&os, &api_key, slug).await;
+    if let Ok(details) = &drop_res {
+        if let Some(chain) = opensea::drop_chain(details) {
+            cfg = cfg.for_chain(&chain).await?;
+            outln!("OpenSea drop chain detected={chain}");
+        } else {
+            outln!("OpenSea drop chain not present — using default RPC profile");
+        }
+    }
+
+    let rpc = fire::rpc_http_client(cfg.rpc_urls.len())?;
+    // These are independent I/O tasks: nonce, RPC keep-alive and ranking prep overlap.
+    let (nonce_res, _) = tokio::join!(
         arm::fetch_nonce(&cfg),
-        opensea::fetch_drop_with(&os, &api_key, slug),
         fire::prewarm_rpcs(&rpc, &cfg.rpc_urls),
     );
     let nonce = nonce_res.wrap_err("prefetch nonce")?;

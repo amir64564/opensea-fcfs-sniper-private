@@ -100,6 +100,7 @@ impl SnipeSession {
         self.ui_target = None;
         self.ui_qty = 1;
         self.ui_early_ms = 3000;
+        self.ui_step = 0;
         // If we were mid wallet-name after import, leave Idle (name save should finish first).
         self.phase = Phase::Idle;
     }

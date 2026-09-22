@@ -396,6 +396,9 @@ async fn gate_and_handle(
                 } else {
                     sess.selected.push(idx);
                 }
+                if matches!(sess.ui_mode.as_deref(), Some("wl") | Some("eligibility")) {
+                    sess.activate_pending_api_key(&wallets)?;
+                }
                 sess.phase = Phase::PickWallets;
                 return Ok(format!("Selected {} wallet(s). Press DONE when ready.", sess.selected.len()));
             }

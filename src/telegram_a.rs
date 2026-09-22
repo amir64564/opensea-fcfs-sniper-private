@@ -272,8 +272,8 @@ fn main_keyboard() -> Value {
     telegram_tools::main_menu()
 }
 
-fn keyboard_for(_sess: &SnipeSession) -> Value {
-    main_keyboard()
+fn keyboard_for(sess: &SnipeSession) -> Value {
+    ui_keyboard(sess)
 }
 
 fn redact_secrets(s: &str, sess: &SnipeSession, password: &str) -> String {

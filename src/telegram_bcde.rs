@@ -304,7 +304,7 @@ async fn gate_and_handle(
                     "wl" => {
                         sess.ui_mode = Some("wl".into());
                         sess.ui_step = 1;
-                        sess.selected.clear();
+                        sess.start_setup();
                         sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
                         return Ok("🎯 WL FCFS\n\nPaste your OpenSea API key. I’ll detect the contract’s chain and drop slug automatically.".into());
                     }
@@ -324,7 +324,7 @@ async fn gate_and_handle(
                     "check" => {
                         sess.ui_mode = Some("eligibility".into());
                         sess.ui_step = 1;
-                        sess.selected.clear();
+                        sess.start_setup();
                         sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
                         return Ok("🔎 Eligibility Checker\n\nPaste your OpenSea API key. I’ll resolve the link/contract first.".into());
                     }

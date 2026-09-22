@@ -362,7 +362,7 @@ async fn gate_and_handle(
                         }
                         for idx in &sess.selected {
                             if let Some(w) = wallets.get(*idx) {
-                                let result = crate::telegram_tools::eligibility(&key, w, &slug, 1).await?;
+                                let result = telegram_tools::eligibility(&key, w, &slug, 1).await?;
                                 lines.push(result);
                             }
                         }

@@ -22,6 +22,23 @@ impl SnipeSession {
         ))
     }
 
+    /// Attach a pending session API key to the currently selected wallet(s).
+    pub fn activate_pending_api_key(&mut self, available: &[WalletEntry]) -> Result<()> {
+        let Some(key) = self.pending_api_key.take() else {
+            return Ok(());
+        };
+        if self.selected.is_empty() {
+            self.pending_api_key = Some(key);
+            eyre::bail!("select at least one wallet");
+        }
+        for &idx in &self.selected {
+            let w = available.get(idx).ok_or_else(|| eyre::eyre!("wallet missing"))?;
+            self.keys.insert(w.address, key.clone());
+        }
+        self.persist()?;
+        Ok(())
+    }
+
     pub fn mark_running(&mut self) {
         self.phase = Phase::Running;
     }
@@ -95,6 +112,7 @@ impl SnipeSession {
             "session cleanup reason={reason} (OpenSea API keys wiped; wallet names/keys untouched)"
         );
         self.wipe_keys_only();
+        self.pending_api_key = None;
         self.selected.clear();
         self.ui_mode = None;
         self.ui_target = None;
@@ -106,6 +124,13 @@ impl SnipeSession {
     }
 
     fn wipe_keys_only(&mut self) {
+        if let Some(mut key) = self.pending_api_key.take() {
+            unsafe {
+                let v = key.as_mut_vec();
+                for b in v.iter_mut() { *b = 0; }
+                v.clear();
+            }
+        }
         for (_addr, mut key) in self.keys.drain() {
             unsafe {
                 let v = key.as_mut_vec();

@@ -83,6 +83,7 @@ pub struct SnipeSession {
     pub ui_target: Option<String>,
     pub ui_qty: u64,
     pub ui_early_ms: i64,
+    pub ui_step: u8,
     /// Indices into `available` that the user selected (order preserved).
     pub selected: Vec<usize>,
     /// address → temporary OpenSea API key for this session only
@@ -106,6 +107,7 @@ impl SnipeSession {
             ui_target: None,
             ui_qty: 1,
             ui_early_ms: 3000,
+            ui_step: 0,
             selected: Vec::new(),
             keys: HashMap::new(),
             api_labels: HashMap::new(),

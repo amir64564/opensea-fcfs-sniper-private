@@ -78,6 +78,11 @@ struct WalletFileEntry {
 
 pub struct SnipeSession {
     pub phase: Phase,
+    /// Telegram UI state. This never changes the mint hot path.
+    pub ui_mode: Option<String>,
+    pub ui_target: Option<String>,
+    pub ui_qty: u64,
+    pub ui_early_ms: i64,
     /// Indices into `available` that the user selected (order preserved).
     pub selected: Vec<usize>,
     /// address → temporary OpenSea API key for this session only
@@ -97,6 +102,10 @@ impl SnipeSession {
     pub fn new() -> Self {
         Self {
             phase: Phase::Idle,
+            ui_mode: None,
+            ui_target: None,
+            ui_qty: 1,
+            ui_early_ms: 3000,
             selected: Vec::new(),
             keys: HashMap::new(),
             api_labels: HashMap::new(),
@@ -207,14 +216,19 @@ impl SnipeSession {
         let w = available
             .get(avail_idx)
             .ok_or_else(|| eyre::eyre!("wallet missing"))?;
-        self.keys.insert(w.address, key.to_string());
+        // One OpenSea API key is used for the whole selected-wallet job.
+        // It is kept session-only and wiped when the job/session ends.
+        for &idx in &self.selected {
+            if let Some(selected_wallet) = available.get(idx) {
+                self.keys.insert(selected_wallet.address, key.to_string());
+            }
+        }
         self.persist()?;
 
         let masked = mask_api_key(key);
-        self.phase = Phase::AwaitApiName { wallet_idx };
+        self.phase = Phase::ReadyToArm;
         Ok(format!(
-            "Attached key {masked} → {} (session only).\n\nSet your API name (or send /skip):",
-            display_wallet(w)
+            "OpenSea API accepted {masked} (session only).\n\nSetup complete. Continue with the button flow."
         ))
     }
 

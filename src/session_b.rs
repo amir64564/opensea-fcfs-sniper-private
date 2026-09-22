@@ -96,6 +96,10 @@ impl SnipeSession {
         );
         self.wipe_keys_only();
         self.selected.clear();
+        self.ui_mode = None;
+        self.ui_target = None;
+        self.ui_qty = 1;
+        self.ui_early_ms = 3000;
         // If we were mid wallet-name after import, leave Idle (name save should finish first).
         self.phase = Phase::Idle;
     }

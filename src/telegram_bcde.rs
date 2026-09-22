@@ -149,6 +149,47 @@ fn locked_keyboard() -> Value {
     })
 }
 
+fn ui_keyboard(sess: &SnipeSession) -> Value {
+    if sess.is_picking_wallets() {
+        if let Ok(wallets) = session::load_available_wallets() {
+            let mut rows = Vec::new();
+            for (i, w) in wallets.iter().enumerate() {
+                let selected = sess.selected.contains(&i);
+                rows.push(vec![json!({
+                    "text": format!("{} {}", if selected { "☑" } else { "☐" }, session::display_wallet(w)),
+                    "callback_data": format!("ui:wallet:{i}")
+                })]);
+            }
+            rows.push(vec![json!({"text":"✅ DONE","callback_data":"ui:wallet_done"})]);
+            rows.push(vec![json!({"text":"❌ CANCEL","callback_data":"ui:cancel"})]);
+            return json!({"inline_keyboard": rows});
+        }
+    }
+    if matches!(sess.phase, Phase::AwaitApiKey { .. }) {
+        return json!({"inline_keyboard":[
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]});
+    }
+    match sess.ui_step {
+        2 => json!({"inline_keyboard":[
+            [{"text":"1","callback_data":"ui:qty:1"},{"text":"2","callback_data":"ui:qty:2"},{"text":"5","callback_data":"ui:qty:5"},{"text":"10","callback_data":"ui:qty:10"}],
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
+        3 => json!({"inline_keyboard":[
+            [{"text":"Slow","callback_data":"ui:speed:slow"},{"text":"Normal","callback_data":"ui:speed:normal"}],
+            [{"text":"Fast","callback_data":"ui:speed:fast"},{"text":"Turbo","callback_data":"ui:speed:turbo"}],
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
+        4 => json!({"inline_keyboard":[
+            [{"text":"🚀 START SNIPE","callback_data":"ui:start"}],
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
+        _ => json!({"inline_keyboard":[
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
+    }
+}
+
 async fn gate_and_handle(
     text: &str,
     chat_id: &str,
@@ -204,6 +245,95 @@ async fn gate_and_handle(
         return Ok("locked — /password first".into());
     }
 
+    if let Some(data) = text.strip_prefix("ui:") {
+        match data {
+            "wl" | "public" => {
+                sess.ui_mode = Some(if data == "wl" { "wl".into() } else { "public".into() });
+                sess.ui_target = None;
+                sess.ui_qty = 1;
+                sess.ui_early_ms = 3000;
+                sess.ui_step = 1;
+                sess.selected.clear();
+                sess.phase = Phase::Idle;
+                return Ok(if data == "wl" {
+                    "🎯 WL FCFS\n\nPaste the OpenSea drop slug.".into()
+                } else {
+                    "🚀 Public FCFS\n\nPaste the mint contract address.".into()
+                });
+            }
+            "cancel" => {
+                crate::task::request_global_cancel();
+                gate.request_cancel();
+                if let Some(job) = live.take() { job.handle.abort(); }
+                gate.reset_idle();
+                crate::task::clear_global_cancel();
+                sess.cleanup("CANCELLED");
+                return Ok("Cancelled.".into());
+            }
+            "wallet_done" => {
+                if sess.selected.is_empty() {
+                    return Ok("Select at least one wallet.".into());
+                }
+                match sess.ui_mode.as_deref() {
+                    Some("wl") => {
+                        sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
+                        sess.ui_step = 2;
+                        return Ok("🔑 Paste your OpenSea API key.\nIt is kept for this session only.".into());
+                    }
+                    Some("public") => {
+                        sess.phase = Phase::ReadyToArm;
+                        sess.ui_step = 2;
+                        return Ok("Wallets selected.\n\nChoose quantity.".into());
+                    }
+                    _ => {}
+                }
+            }
+            "start" => {
+                let target = sess.ui_target.clone().ok_or_else(|| eyre::eyre!("missing target"))?;
+                let qty = sess.ui_qty.max(1);
+                let early = sess.ui_early_ms;
+                let mode = sess.ui_mode.clone().unwrap_or_default();
+                sess.ui_step = 5;
+                if mode == "wl" {
+                    let p = vec!["/snipe_wl", target.as_str(), Box::leak(qty.to_string().into_boxed_str()), "auto", Box::leak(early.to_string().into_boxed_str())];
+                    return run_snipe_wl(p, sess, chat_id, gate, job_tx, live).await;
+                }
+                let p = vec!["/snipe_public", target.as_str(), Box::leak(qty.to_string().into_boxed_str()), "auto", Box::leak(early.to_string().into_boxed_str())];
+                return run_snipe_public(p, sess, chat_id, gate, job_tx, live).await;
+            }
+            x if x.starts_with("wallet:") => {
+                let idx = x[7..].parse::<usize>().map_err(|_| eyre::eyre!("invalid wallet button"))?;
+                let wallets = session::load_available_wallets()?;
+                if idx >= wallets.len() { return Ok("Invalid wallet.".into()); }
+                if let Some(pos) = sess.selected.iter().position(|&v| v == idx) {
+                    sess.selected.remove(pos);
+                } else {
+                    sess.selected.push(idx);
+                }
+                sess.phase = Phase::PickWallets;
+                return Ok(format!("Selected {} wallet(s). Press DONE when ready.", sess.selected.len()));
+            }
+            x if x.starts_with("qty:") => {
+                let qty = x[4..].parse::<u64>().map_err(|_| eyre::eyre!("invalid quantity"))?;
+                sess.ui_qty = qty.max(1);
+                sess.ui_step = 3;
+                return Ok(format!("Quantity: {}\n\nChoose speed.", sess.ui_qty));
+            }
+            x if x.starts_with("speed:") => {
+                sess.ui_early_ms = match &x[6..] {
+                    "slow" => 5000,
+                    "normal" => 3000,
+                    "fast" => 1000,
+                    "turbo" => 250,
+                    _ => 3000,
+                };
+                sess.ui_step = 4;
+                return Ok("Speed selected. Gas: AUTO.\n\nReady to start.".into());
+            }
+            _ => {}
+        }
+    }
+
     // Cancel Session / lock also abort any live background snipe.
     if text.to_lowercase() == "cancel session"
         || matches!(
@@ -236,6 +366,17 @@ async fn handle_message(
     }
     let raw0 = parts[0];
     let cmd = norm_cmd(raw0);
+
+    // Telegram wizard target input. Required text is accepted only at the target step.
+    if sess.ui_target.is_none() && matches!(sess.ui_mode.as_deref(), Some("wl") | Some("public"))
+        && !cmd.starts_with('/')
+        && !text.eq_ignore_ascii_case("cancel session")
+    {
+        sess.ui_target = Some(text.trim().to_string());
+        sess.start_setup();
+        sess.ui_step = 1;
+        return Ok("Target received. Select the wallets to use.".into());
+    }
 
     // --- Phase-aware free-text handling (before command match) ---
     // Wallet name after import
@@ -300,7 +441,9 @@ async fn handle_message(
         {
             crate::outln!("telegram: received session OpenSea API key paste (not logged)");
             let wallets = session::load_available_wallets()?;
-            return sess.attach_api_key(&wallets, text);
+            let out = sess.attach_api_key(&wallets, text)?;
+            sess.ui_step = 2;
+            return Ok(out + "\n\nChoose quantity.");
         }
     }
 

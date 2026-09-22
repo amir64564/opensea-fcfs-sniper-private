@@ -52,22 +52,39 @@ pub fn parse_eth(s: &str) -> Result<U256> {
 
 pub fn main_menu() -> Value {
     serde_json::json!({
-        "keyboard": [
-            [{"text":"🎨 Mint NFT"},{"text":"🎯 WL Mint Sniper"}],
-            [{"text":"🚀 Public Mint Sniper"},{"text":"📦 Batch Mint"}],
-            [{"text":"🎯 Batch Snipe"},{"text":"🔧 Manual Mint"}],
-            [{"text":"🎛️ Exec"},{"text":"🎯 My Snipes"}],
-            [{"text":"📋 Failure Log"},{"text":"❌ Cancel Session"}],
-            [{"text":"🔐 Snipe Setup"},{"text":"⚡ Arm"}],
-            [{"text":"📤 Send NFTs"},{"text":"📤 Batch Send"}],
-            [{"text":"🔥 Burn NFTs"},{"text":"🏦 Consolidate"}],
-            [{"text":"🔍 Eligibility"},{"text":"💸 Disperse ETH"}],
-            [{"text":"💸 Send ETH"},{"text":"👛 Wallets"}],
-            [{"text":"🌐 RPC"},{"text":"⚙️ Settings"}],
-            [{"text":"/status"},{"text":"/help"}]
-        ],
-        "resize_keyboard": true,
-        "is_persistent": true
+        "inline_keyboard": [
+            [
+                {"text":"🎨 Mint NFT","callback_data":"🎨 Mint NFT"},
+                {"text":"🎯 WL Mint","callback_data":"🎯 WL Mint Sniper"}
+            ],
+            [
+                {"text":"🚀 Public Mint","callback_data":"🚀 Public Mint Sniper"},
+                {"text":"📦 Batch Mint","callback_data":"📦 Batch Mint"}
+            ],
+            [
+                {"text":"🎯 Batch Snipe","callback_data":"🎯 Batch Snipe"},
+                {"text":"🔐 Snipe Setup","callback_data":"🔐 Snipe Setup"}
+            ],
+            [
+                {"text":"⚡ Arm","callback_data":"⚡ Arm"},
+                {"text":"🎯 My Snipes","callback_data":"🎯 My Snipes"}
+            ],
+            [
+                {"text":"👛 Wallets","callback_data":"👛 Wallets"},
+                {"text":"🌐 RPC","callback_data":"🌐 RPC"}
+            ],
+            [
+                {"text":"📋 Failure Log","callback_data":"📋 Failure Log"},
+                {"text":"❌ Cancel","callback_data":"❌ Cancel Session"}
+            ],
+            [
+                {"text":"⚙️ Settings","callback_data":"⚙️ Settings"},
+                {"text":"/status","callback_data":"/status"}
+            ],
+            [
+                {"text":"/help","callback_data":"/help"}
+            ]
+        ]
     })
 }
 

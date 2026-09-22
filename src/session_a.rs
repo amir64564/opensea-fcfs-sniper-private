@@ -88,6 +88,8 @@ pub struct SnipeSession {
     pub selected: Vec<usize>,
     /// address → temporary OpenSea API key for this session only
     keys: HashMap<Address, String>,
+    /// API key captured before wallet selection (WL contract resolution / eligibility).
+    pending_api_key: Option<String>,
     /// address → optional session-only API display name (UI; wiped with session)
     api_labels: HashMap<Address, String>,
     file_path: PathBuf,
@@ -110,6 +112,7 @@ impl SnipeSession {
             ui_step: 0,
             selected: Vec::new(),
             keys: HashMap::new(),
+            pending_api_key: None,
             api_labels: HashMap::new(),
             file_path: session_file_path(),
         }
@@ -218,11 +221,15 @@ impl SnipeSession {
         let w = available
             .get(avail_idx)
             .ok_or_else(|| eyre::eyre!("wallet missing"))?;
-        // One OpenSea API key is used for the whole selected-wallet job.
-        // It is kept session-only and wiped when the job/session ends.
-        for &idx in &self.selected {
-            if let Some(selected_wallet) = available.get(idx) {
-                self.keys.insert(selected_wallet.address, key.to_string());
+        // WL contract resolution can happen before wallet selection. Keep the key
+        // session-only until the user selects the wallet(s) for this operation.
+        if self.selected.is_empty() {
+            self.pending_api_key = Some(key.to_string());
+        } else {
+            for &idx in &self.selected {
+                if let Some(selected_wallet) = available.get(idx) {
+                    self.keys.insert(selected_wallet.address, key.to_string());
+                }
             }
         }
         self.persist()?;

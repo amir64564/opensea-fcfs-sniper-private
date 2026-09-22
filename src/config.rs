@@ -99,8 +99,9 @@ impl AppConfig {
             let expected = chain_id_for_name(chain);
             if !fallback.is_empty() {
                 for url in &fallback {
-                    if let Ok(provider) = ProviderBuilder::new().on_http(url.parse()) {
-                        if let Ok(id) = provider.get_chain_id().await {
+                    let Ok(parsed_url) = url.parse() else { continue };
+                    let provider = ProviderBuilder::new().on_http(parsed_url);
+                    if let Ok(id) = provider.get_chain_id().await {
                             if expected.map(|x| x == id).unwrap_or(false) {
                                 let mut out = self.clone();
                                 out.rpc_urls = fallback;

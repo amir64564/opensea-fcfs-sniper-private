@@ -146,6 +146,11 @@ pub async fn run() -> Result<()> {
                     if let Some(cb) = u.get("callback_query") {
                         let callback_id = cb.get("id").and_then(Value::as_str).unwrap_or("");
                         let data = cb.get("data").and_then(Value::as_str).unwrap_or("").trim();
+                        let message_id = cb
+                            .get("message")
+                            .and_then(|m| m.get("message_id"))
+                            .map(|v| v.to_string().trim_matches('"').to_string())
+                            .unwrap_or_default();
                         let chat_id = cb
                             .get("message")
                             .and_then(|m| m.get("chat"))
@@ -191,8 +196,10 @@ pub async fn run() -> Result<()> {
                         } else {
                             locked_keyboard()
                         };
-                        if let Err(e) = send_kb(&client, &api, &chat_id, &safe, kb).await {
-                            crate::outln!("telegram callback send_err={e}");
+                        if let Err(e) = edit_kb(&client, &api, &chat_id, &message_id, &safe, kb.clone()).await {
+                            if let Err(send_err) = send_kb(&client, &api, &chat_id, &safe, kb).await {
+                                crate::outln!("telegram callback edit_err={e}; send_err={send_err}");
+                            }
                         }
                         continue;
                     }

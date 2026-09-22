@@ -142,11 +142,10 @@ fn ct_eq(a: &str, b: &str) -> bool {
 
 fn locked_keyboard() -> Value {
     json!({
-        "keyboard": [
-            [{"text": "/start"}, {"text": "/password"}]
-        ],
-        "resize_keyboard": true,
-        "is_persistent": true
+        "inline_keyboard": [
+            [{"text": "🔓 Start", "callback_data": "/start"}],
+            [{"text": "🔐 Unlock", "callback_data": "/password"}]
+        ]
     })
 }
 

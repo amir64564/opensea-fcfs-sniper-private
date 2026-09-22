@@ -54,35 +54,8 @@ pub fn main_menu() -> Value {
     serde_json::json!({
         "inline_keyboard": [
             [
-                {"text":"🎨 Mint NFT","callback_data":"🎨 Mint NFT"},
-                {"text":"🎯 WL Mint","callback_data":"🎯 WL Mint Sniper"}
-            ],
-            [
-                {"text":"🚀 Public Mint","callback_data":"🚀 Public Mint Sniper"},
-                {"text":"📦 Batch Mint","callback_data":"📦 Batch Mint"}
-            ],
-            [
-                {"text":"🎯 Batch Snipe","callback_data":"🎯 Batch Snipe"},
-                {"text":"🔐 Snipe Setup","callback_data":"🔐 Snipe Setup"}
-            ],
-            [
-                {"text":"⚡ Arm","callback_data":"⚡ Arm"},
-                {"text":"🎯 My Snipes","callback_data":"🎯 My Snipes"}
-            ],
-            [
-                {"text":"👛 Wallets","callback_data":"👛 Wallets"},
-                {"text":"🌐 RPC","callback_data":"🌐 RPC"}
-            ],
-            [
-                {"text":"📋 Failure Log","callback_data":"📋 Failure Log"},
-                {"text":"❌ Cancel","callback_data":"❌ Cancel Session"}
-            ],
-            [
-                {"text":"⚙️ Settings","callback_data":"⚙️ Settings"},
-                {"text":"/status","callback_data":"/status"}
-            ],
-            [
-                {"text":"/help","callback_data":"/help"}
+                {"text":"🎯 WL FCFS","callback_data":"ui:wl"},
+                {"text":"🚀 Public FCFS","callback_data":"ui:public"}
             ]
         ]
     })

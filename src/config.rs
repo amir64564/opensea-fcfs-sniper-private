@@ -86,11 +86,39 @@ impl AppConfig {
         let chain_id_key = format!("CHAIN_ID_{key}");
 
         let Some(primary) = env::var(&rpc_key).ok().filter(|v| !v.trim().is_empty()) else {
+            // Chain-specific RPC is optional. If it is not configured, reuse the normal
+            // RPC_URL/BROADCAST_RPCS pool when one of those endpoints is actually on
+            // the detected chain. This removes any artificial "premium RPC required"
+            // dependency while still refusing to send on the wrong chain.
             if chain_matches_id(chain, self.chain_id) {
                 return Ok(self.clone());
             }
+
+            let mut fallback = self.rpc_urls.clone();
+            fallback.retain(|u| !u.trim().is_empty());
+            let expected = chain_id_for_name(chain);
+            if !fallback.is_empty() {
+                for url in &fallback {
+                    if let Ok(provider) = ProviderBuilder::new().on_http(url.parse()) {
+                        if let Ok(id) = provider.get_chain_id().await {
+                            if expected.map(|x| x == id).unwrap_or(false) {
+                                let mut out = self.clone();
+                                out.rpc_urls = fallback;
+                                out.chain_id = id;
+                                crate::outln!(
+                                    "multichain fallback selected chain={chain} chain_id={} rpcs={}",
+                                    out.chain_id,
+                                    out.rpc_urls.len()
+                                );
+                                return Ok(out);
+                            }
+                        }
+                    }
+                }
+            }
+
             eyre::bail!(
-                "OpenSea detected chain={chain}, but {rpc_key} is not configured. Add {rpc_key} and optional {extra_key} to .env"
+                "OpenSea detected chain={chain}, but no configured RPC endpoint matches that chain. Add the chain RPC only if you actually need that chain."
             );
         };
 
@@ -144,6 +172,20 @@ fn chain_env_key(chain: &str) -> String {
             }
         })
         .collect()
+}
+
+fn chain_id_for_name(chain: &str) -> Option<u64> {
+    match chain.trim().to_ascii_lowercase().as_str() {
+        "ethereum" | "mainnet" => Some(1),
+        "base" => Some(8453),
+        "arbitrum" | "arbitrum_one" => Some(42161),
+        "optimism" => Some(10),
+        "polygon" => Some(137),
+        "zora" => Some(7777777),
+        "blast" => Some(81457),
+        "robinhood" | "robinhood_chain" => Some(4663),
+        _ => None,
+    }
 }
 
 fn chain_matches_id(chain: &str, chain_id: u64) -> bool {

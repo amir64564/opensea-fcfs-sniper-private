@@ -258,6 +258,98 @@ pub async fn hammer_until_ready_with(
     }
 }
 
+
+pub fn parse_open_sea_target(input: &str) -> Result<(Option<String>, String)> {
+    let raw = input.trim().trim_end_matches('/');
+    if raw.is_empty() { eyre::bail!("empty OpenSea target"); }
+
+    if let Ok(url) = reqwest::Url::parse(raw) {
+        let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+        if host.ends_with("opensea.io") {
+            let seg: Vec<&str> = url.path_segments().map(|x| x.collect()).unwrap_or_default();
+            if seg.first().copied() == Some("collection") && seg.len() >= 2 {
+                return Ok((None, seg[1].to_string()));
+            }
+            if seg.first().copied() == Some("assets") && seg.len() >= 3 {
+                let chain = Some(seg[1].to_ascii_lowercase());
+                let contract = seg[2].to_string();
+                if Address::from_str(&contract).is_ok() {
+                    return Ok((chain, contract));
+                }
+            }
+        }
+    }
+    if Address::from_str(raw).is_ok() { return Ok((None, raw.to_string())); }
+    Ok((None, raw.to_string()))
+}
+
+pub async fn resolve_contract_to_drop(
+    api_key: &str,
+    contract: &str,
+    preferred_chain: Option<&str>,
+) -> Result<(String, String, Value)> {
+    let address = Address::from_str(contract).wrap_err("invalid contract address")?;
+    let client = http_client()?;
+    let mut chains = Vec::new();
+    if let Some(c) = preferred_chain { chains.push(c.to_ascii_lowercase()); }
+    for c in ["ethereum", "base", "arbitrum", "optimism", "polygon", "zora", "blast", "robinhood"] {
+        if !chains.iter().any(|x| x == c) { chains.push(c.to_string()); }
+    }
+
+    let mut set = JoinSet::new();
+    for chain in chains {
+        let client = client.clone();
+        let api_key = api_key.to_string();
+        let address = format!("{address}");
+        set.spawn(async move {
+            let url = format!("{OPENSEA_API}/api/v2/chain/{chain}/contract/{address}");
+            let resp = client.get(url)
+                .header("X-API-KEY", &api_key)
+                .header("Accept", "application/json")
+                .send().await;
+            (chain, resp)
+        });
+    }
+
+    let mut matches = Vec::new();
+    while let Some(joined) = set.join_next().await {
+        let (chain, resp) = joined.map_err(|e| eyre::eyre!("contract resolver task: {e}"))?;
+        let Ok(resp) = resp else { continue };
+        if !resp.status().is_success() { continue; }
+        let text = resp.text().await.unwrap_or_default();
+        let Ok(details) = serde_json::from_str::<Value>(&text) else { continue };
+        if let Some(slug) = find_collection_slug(&details) {
+            matches.push((chain, slug));
+        }
+    }
+
+    for (chain, slug) in matches {
+        if let Ok(drop) = fetch_drop_with(&client, api_key, &slug).await {
+            return Ok((chain, slug, drop));
+        }
+    }
+    eyre::bail!("could not resolve contract to an OpenSea drop on the supported chains")
+}
+
+fn find_collection_slug(v: &Value) -> Option<String> {
+    const KEYS: &[&str] = &["collection_slug", "collectionSlug", "slug", "collection"];
+    if let Some(obj) = v.as_object() {
+        for key in KEYS {
+            if let Some(s) = obj.get(*key).and_then(|x| x.as_str()).map(str::trim).filter(|x| !x.is_empty()) {
+                if !s.starts_with("0x") { return Some(s.to_string()); }
+            }
+        }
+        for child in obj.values() {
+            if let Some(s) = find_collection_slug(child) { return Some(s); }
+        }
+    } else if let Some(arr) = v.as_array() {
+        for child in arr {
+            if let Some(s) = find_collection_slug(child) { return Some(s); }
+        }
+    }
+    None
+}
+
 pub async fn fetch_drop(api_key: &str, slug: &str) -> Result<Value> {
     let client = http_client()?;
     fetch_drop_with(&client, api_key, slug).await

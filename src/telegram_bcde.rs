@@ -84,6 +84,30 @@ async fn send_kb(
     Ok(())
 }
 
+async fn edit_kb(
+    client: &Client,
+    api: &str,
+    chat_id: &str,
+    message_id: &str,
+    text: &str,
+    keyboard: Value,
+) -> Result<()> {
+    let chunk = if text.len() > 4000 { format!("{}…", &text[..4000]) } else { text.to_string() };
+    let body = json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": chunk,
+        "disable_web_page_preview": true,
+        "reply_markup": keyboard,
+    });
+    let r = client.post(format!("{api}/editMessageText")).json(&body).send().await?;
+    if !r.status().is_success() {
+        let t = r.text().await.unwrap_or_default();
+        eyre::bail!("editMessageText failed: {}", &t[..t.len().min(200)]);
+    }
+    Ok(())
+}
+
 fn norm_cmd(s: &str) -> String {
     s.split('@').next().unwrap_or(s).to_lowercase()
 }

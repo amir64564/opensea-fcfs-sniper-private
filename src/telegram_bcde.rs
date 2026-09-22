@@ -200,6 +200,15 @@ fn ui_keyboard(sess: &SnipeSession) -> Value {
         ]});
     }
     match sess.ui_step {
+        9 => json!({"inline_keyboard":[
+            [{"text":"🎯 WL FCFS","callback_data":"ui:action:wl"}],
+            [{"text":"🚀 Public FCFS","callback_data":"ui:action:public"}],
+            [{"text":"🔎 Check Eligibility","callback_data":"ui:action:check"}],
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
+        10 => json!({"inline_keyboard":[
+            [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]
+        ]}),
         2 => json!({"inline_keyboard":[
             [{"text":"1","callback_data":"ui:qty:1"},{"text":"2","callback_data":"ui:qty:2"},{"text":"5","callback_data":"ui:qty:5"},{"text":"10","callback_data":"ui:qty:10"}],
             [{"text":"❌ CANCEL","callback_data":"ui:cancel"}]

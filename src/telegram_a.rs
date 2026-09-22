@@ -142,6 +142,61 @@ pub async fn run() -> Result<()> {
                     if let Some(id) = u.get("update_id").and_then(|v| v.as_i64()) {
                         offset = id + 1;
                     }
+
+                    if let Some(cb) = u.get("callback_query") {
+                        let callback_id = cb.get("id").and_then(Value::as_str).unwrap_or("");
+                        let data = cb.get("data").and_then(Value::as_str).unwrap_or("").trim();
+                        let chat_id = cb
+                            .get("message")
+                            .and_then(|m| m.get("chat"))
+                            .and_then(|c| c.get("id"))
+                            .map(|v| v.to_string().trim_matches('"').to_string())
+                            .unwrap_or_default();
+
+                        if !callback_id.is_empty() {
+                            let _ = client
+                                .post(format!("{api}/answerCallbackQuery"))
+                                .json(&json!({"callback_query_id": callback_id}))
+                                .send()
+                                .await;
+                        }
+                        if chat_id.is_empty() || data.is_empty() {
+                            continue;
+                        }
+                        if let Some(ref allow) = allow_chat {
+                            if &chat_id != allow {
+                                continue;
+                            }
+                        }
+
+                        let reply = match gate_and_handle(
+                            data,
+                            &chat_id,
+                            &password,
+                            &mut unlocked,
+                            &unlock_path,
+                            &mut sess,
+                            &gate,
+                            &job_tx,
+                            &mut live,
+                        )
+                        .await
+                        {
+                            Ok(s) => s,
+                            Err(e) => errclass::telegram_error(&e),
+                        };
+                        let safe = redact_secrets(&reply, &sess, &password);
+                        let kb = if unlocked.contains(&chat_id) {
+                            keyboard_for(&sess)
+                        } else {
+                            locked_keyboard()
+                        };
+                        if let Err(e) = send_kb(&client, &api, &chat_id, &safe, kb).await {
+                            crate::outln!("telegram callback send_err={e}");
+                        }
+                        continue;
+                    }
+
                     let msg = match u.get("message").or_else(|| u.get("edited_message")) {
                         Some(m) => m,
                         None => continue,

@@ -309,6 +309,12 @@ async fn gate_and_handle(
                         return Ok("🎯 WL FCFS\n\nPaste your OpenSea API key. I’ll detect the contract’s chain and drop slug automatically.".into());
                     }
                     "public" => {
+                        let raw = sess.ui_target.clone().ok_or_else(|| eyre::eyre!("missing target"))?;
+                        let (_chain, parsed) = crate::opensea::parse_open_sea_target(&raw)?;
+                        if alloy::primitives::Address::from_str(&parsed).is_err() {
+                            return Ok("Public FCFS needs a contract address or an OpenSea NFT asset link containing the contract.".into());
+                        }
+                        sess.ui_target = Some(parsed);
                         sess.ui_mode = Some("public".into());
                         sess.ui_step = 1;
                         sess.selected.clear();

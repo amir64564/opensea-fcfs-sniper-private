@@ -214,13 +214,9 @@ impl SnipeSession {
         let Phase::AwaitApiKey { wallet_idx } = self.phase else {
             eyre::bail!("not waiting for an API key (phase={:?})", self.phase);
         };
-        if wallet_idx >= self.selected.len() {
+        if !self.selected.is_empty() && wallet_idx >= self.selected.len() {
             eyre::bail!("internal: wallet_idx out of range");
         }
-        let avail_idx = self.selected[wallet_idx];
-        let w = available
-            .get(avail_idx)
-            .ok_or_else(|| eyre::eyre!("wallet missing"))?;
         // WL contract resolution can happen before wallet selection. Keep the key
         // session-only until the user selects the wallet(s) for this operation.
         if self.selected.is_empty() {

@@ -184,7 +184,12 @@ fn ui_keyboard(sess: &SnipeSession) -> Value {
                     "callback_data": format!("ui:wallet:{i}")
                 })]);
             }
-            rows.push(vec![json!({"text":"✅ DONE","callback_data":"ui:wallet_done"})]);
+            let done_label = if sess.ui_mode.as_deref() == Some("wl") {
+                "✅ USE THIS WALLET"
+            } else {
+                "✅ DONE"
+            };
+            rows.push(vec![json!({"text":done_label,"callback_data":"ui:wallet_done"})]);
             rows.push(vec![json!({"text":"❌ CANCEL","callback_data":"ui:cancel"})]);
             return json!({"inline_keyboard": rows});
         }
@@ -285,6 +290,32 @@ async fn gate_and_handle(
                     "🚀 Public FCFS\n\nPaste the mint contract address.".into()
                 });
             }
+            x if x.starts_with("action:") => {
+                match &x[7..] {
+                    "wl" => {
+                        sess.ui_mode = Some("wl".into());
+                        sess.ui_step = 1;
+                        sess.selected.clear();
+                        sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
+                        return Ok("🎯 WL FCFS\n\nPaste your OpenSea API key. I’ll detect the contract’s chain and drop slug automatically.".into());
+                    }
+                    "public" => {
+                        sess.ui_mode = Some("public".into());
+                        sess.ui_step = 1;
+                        sess.selected.clear();
+                        sess.start_setup();
+                        return Ok("🚀 Public FCFS\n\nSelect the wallet(s) to use.".into());
+                    }
+                    "check" => {
+                        sess.ui_mode = Some("eligibility".into());
+                        sess.ui_step = 1;
+                        sess.selected.clear();
+                        sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
+                        return Ok("🔎 Eligibility Checker\n\nPaste your OpenSea API key. I’ll resolve the link/contract first.".into());
+                    }
+                    _ => {}
+                }
+            }
             "cancel" => {
                 crate::task::request_global_cancel();
                 gate.request_cancel();
@@ -300,9 +331,28 @@ async fn gate_and_handle(
                 }
                 match sess.ui_mode.as_deref() {
                     Some("wl") => {
-                        sess.phase = Phase::AwaitApiKey { wallet_idx: 0 };
+                        sess.phase = Phase::ReadyToArm;
                         sess.ui_step = 2;
-                        return Ok("🔑 Paste your OpenSea API key.\nIt is kept for this session only.".into());
+                        return Ok("Wallet selected.\n\nChoose quantity.".into());
+                    }
+                    Some("eligibility") => {
+                        let wallets = session::load_available_wallets()?;
+                        let key = sess.selected.first().and_then(|i| wallets.get(*i)).and_then(|w| sess.key_for(&w.address)).map(str::to_string)
+                            .ok_or_else(|| eyre::eyre!("eligibility API key missing"))?;
+                        let slug = sess.ui_target.clone().ok_or_else(|| eyre::eyre!("missing target"))?;
+                        let mut lines = vec![format!("🔎 Eligibility: {slug}")];
+                        let drop = crate::opensea::fetch_drop(&key, &slug).await?;
+                        if let Some(stage) = crate::opensea::pick_relevant_stage_start(&drop).ok() {
+                            lines.push(format!("Current/next stage: {} ({})", if stage.label.is_empty() { "unknown" } else { &stage.label }, stage.stage_type));
+                        }
+                        for idx in &sess.selected {
+                            if let Some(w) = wallets.get(*idx) {
+                                let result = crate::telegram_tools::eligibility(&key, w, &slug, 1).await?;
+                                lines.push(result);
+                            }
+                        }
+                        sess.cleanup("ELIGIBILITY_CHECK_DONE");
+                        return Ok(lines.join("\n\n"));
                     }
                     Some("public") => {
                         sess.phase = Phase::ReadyToArm;
@@ -329,7 +379,10 @@ async fn gate_and_handle(
                 let idx = x[7..].parse::<usize>().map_err(|_| eyre::eyre!("invalid wallet button"))?;
                 let wallets = session::load_available_wallets()?;
                 if idx >= wallets.len() { return Ok("Invalid wallet.".into()); }
-                if let Some(pos) = sess.selected.iter().position(|&v| v == idx) {
+                if sess.ui_mode.as_deref() == Some("wl") {
+                    sess.selected.clear();
+                    sess.selected.push(idx);
+                } else if let Some(pos) = sess.selected.iter().position(|&v| v == idx) {
                     sess.selected.remove(pos);
                 } else {
                     sess.selected.push(idx);
@@ -397,9 +450,8 @@ async fn handle_message(
         && !text.eq_ignore_ascii_case("cancel session")
     {
         sess.ui_target = Some(text.trim().to_string());
-        sess.start_setup();
-        sess.ui_step = 1;
-        return Ok("Target received. Select the wallets to use.".into());
+        sess.ui_step = 9;
+        return Ok("Target received. Choose what you want to do.".into());
     }
 
     // --- Phase-aware free-text handling (before command match) ---
@@ -466,6 +518,30 @@ async fn handle_message(
             crate::outln!("telegram: received session OpenSea API key paste (not logged)");
             let wallets = session::load_available_wallets()?;
             let out = sess.attach_api_key(&wallets, text)?;
+            match sess.ui_mode.as_deref() {
+                Some("wl") | Some("eligibility") => {
+                    let raw = sess.ui_target.clone().ok_or_else(|| eyre::eyre!("missing target"))?;
+                    let (chain, parsed) = crate::opensea::parse_open_sea_target(&raw)?;
+                    let (chain_name, slug) = if alloy::primitives::Address::from_str(&parsed).is_ok() {
+                        let (c, s, _drop) = crate::opensea::resolve_contract_to_drop(text.trim(), &parsed, chain.as_deref()).await?;
+                        (c, s)
+                    } else {
+                        let _drop = crate::opensea::fetch_drop(text.trim(), &parsed).await?;
+                        (chain.unwrap_or_else(|| "unknown".into()), parsed)
+                    };
+                    sess.ui_target = Some(slug.clone());
+                    if sess.ui_mode.as_deref() == Some("eligibility") {
+                        sess.phase = Phase::PickWallets;
+                        sess.ui_step = 10;
+                        return Ok(format!("{out}\n\nResolved: {slug}\nChain: {chain_name}\n\nSelect all wallets you want to check, then DONE."));
+                    }
+                    sess.phase = Phase::PickWallets;
+                    sess.ui_step = 1;
+                    sess.selected.clear();
+                    return Ok(format!("{out}\n\nResolved drop: {slug}\nChain: {chain_name}\n\nSelect ONE wallet for this WL session."));
+                }
+                _ => {}
+            }
             sess.ui_step = 2;
             return Ok(out + "\n\nChoose quantity.");
         }
